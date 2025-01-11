@@ -1,0 +1,101 @@
+# List of enabled scanning modules
+Enabled_Modules = ["Scanning", "BruteForce", "DDoS"]
+
+# Variables for Preprocessing conn.log
+[BasicParameters]
+# The values below are multipliers applied to the average number of IPs/Ports
+# Example: if a host has more than twice the average of connections to unique IPs
+# the highOutIP Flag is set.
+# TCP
+Threshold_Outliers_Outgoing_Unique_Port_TCP = 1.0 # highOutPort is set if exceeded
+Threshold_Outliers_Outgoing_Unique_IP_TCP = 1.0 # highOutIP is set if exceeded
+Threshold_Outliers_Incoming_Unique_Port_TCP = 1.0 # highInPort is set if exceeded
+Threshold_Outliers_Incoming_Unique_IP_TCP = 1.0 # highInIP is set if exceeded
+Threshold_Connections_Per_Destination_IP_TCP = 1.0 # highOutConn is set if exceeded
+Threshold_Connections_Per_Source_IP_TCP = 1.0 # highInConn is set if exceeded
+# UDP
+Threshold_Outliers_Outgoing_Unique_Port_UDP = 1.0 # highOutPort is set if exceeded
+Threshold_Outliers_Outgoing_Unique_IP_UDP = 1.0 # highOutIP is set if exceeded
+Threshold_Outliers_Incoming_Unique_Port_UDP = 1.0 # highInPort is set if exceeded
+Threshold_Outliers_Incoming_Unique_IP_UDP = 1.0 # highInIP is set if exceeded
+Threshold_Connections_Per_Destination_IP_UDP = 1.0 # highOutConn is set if exceeded
+Threshold_Connections_Per_Source_IP_UDP = 1.0 # highInConn is set if exceeded
+# ICMP
+Threshold_Outliers_Outgoing_Unique_Port_ICMP = 1.0 # highOutPort is set if exceeded
+Threshold_Outliers_Outgoing_Unique_IP_ICMP = 1.0 # highOutIP is set if exceeded
+Threshold_Outliers_Incoming_Unique_Port_ICMP = 1.0 # highInPort is set if exceeded
+Threshold_Outliers_Incoming_Unique_IP_ICMP = 1.0 # highInIP is set if exceeded
+Threshold_Connections_Per_Destination_IP_ICMP = 1.0 # highOutConn is set if exceeded
+Threshold_Connections_Per_Source_IP_ICMP = 1.0 # highInConn is set if exceeded
+
+# Port Scan Detection Settings
+[PortScan]
+Connection_Threshold = 20
+Unique_Port_Threshold = 20
+
+# Host Discovery Scan Detection Settings
+[HostDiscoveryScan]
+Unique_IP_Threshold = 1000
+
+# Protocol-Specific Scan Detection Settings
+[ProtocolSpecificScan]
+SYN_Scan_Threshold = 1000
+
+# Version Scan Detection Settings
+[VersionScan]
+Connection_Threshold = 5 # Number of connections per port
+Min_Port_Number = 8 # Number of unique Ports
+Max_Bytes_Transferred = 10
+Common_Ports = [
+    20, 21, 22, 23, 25, 53, 80, 110, 111, 135, 137, 138, 139, 143, 161, 389,
+    443, 445, 464, 500, 513, 514, 515, 623, 636, 1433, 1521, 2049, 3306,
+    3389, 5432, 5900, 5985, 5986, 6379, 8080, 8443, 9200, 27017
+]
+
+# Service Enumeration Detection Settings
+[ServiceEnumeration]
+Connection_Threshold = 5 # Number of connections per port
+Min_Port_Number = 8 # Number of unique Ports
+Min_Bytes_Transferred = 10
+Common_Ports = [
+    20, 21, 22, 23, 25, 53, 80, 110, 111, 135, 137, 138, 139, 143, 161, 389,
+    443, 445, 464, 500, 513, 514, 515, 623, 636, 1433, 1521, 2049, 3306,
+    3389, 5432, 5900, 5985, 5986, 6379, 8080, 8443, 9200, 27017
+]
+
+[BruteForce]
+CommonPorts = [22, 23, 3389, 21, 5900]  # SSH, Telnet, RDP, FTP, VNC
+MinConnectionsPerPort = 50
+PasswordSprayingThreshold = 50
+DictionaryAttackIntervalThreshold = 0.5
+
+[SYNFlood]
+SYNThreshold = 1200
+
+[UDPFlood]
+UDPThreshold = 1000
+
+[ICMPFlood]
+ICMPThreshold = 500
+
+[DNSAmplification]
+DNSThreshold = 100
+AmplificationFactor = 2.0
+MaxDomainRepetitions = 5
+
+[NTPAmplification]
+NTPThreshold = 100
+AmplificationFactor = 10.0
+
+[SSDPAmplification]
+SSDPThreshold = 100
+AmplificationFactor = 10.0
+
+[ConnectionExhaustion]
+ConnectionThreshold = 1000
+MaxBytes = 200
+MinDuration = 20.0
+
+[Slowloris]
+HalfOpenThreshold = 100
+MinDuration = 30.0
