@@ -1,0 +1,9 @@
+### This is the example file for parsing arguments directly###
+# Lines starting with # are ignored
+# Paths are declared like this: config_path=C:\Example\config.toml
+# Trailing comments are also possible:
+# config_path=C:\Example\config.toml # Example Comment
+
+config_path=
+output_path=
+input_path=

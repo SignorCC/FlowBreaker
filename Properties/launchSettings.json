@@ -1,7 +1,8 @@
 {
   "profiles": {
     "FlowBreaker": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "commandLineArgs": "-a C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Config\\arguments.txt"
     },
     "WSL": {
       "commandName": "WSL2",

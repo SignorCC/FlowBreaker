@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using XAct;
 
 namespace FlowBreaker
 {
@@ -13,20 +14,25 @@ namespace FlowBreaker
                 await RunWithArguments(args);
             
             else
-                await RunWithoutArguments();
-            
+                // Basically run with base directory containing an arguments.txt file
+                await RunWithArguments([ "-a", Path.Combine(Environment.CurrentDirectory, "arguments.txt")]);
         }
 
         static async Task RunWithArguments(string[] args)
         {
+            string argumentPath = null;
             string inputPath = null;
             string outputPath = null;
             string configFilePath = null;
+
 
             for (int i = 0; i < args.Length; i++)
             {
                 switch (args[i])
                 {
+                    case "-a":
+                        if (i + 1 < args.Length) argumentPath = args[++i];
+                        break;
                     case "-i":
                         if (i + 1 < args.Length) inputPath = args[++i];
                         break;
@@ -39,16 +45,64 @@ namespace FlowBreaker
                 }
             }
 
-            if (string.IsNullOrEmpty(inputPath) || string.IsNullOrEmpty(outputPath) || string.IsNullOrEmpty(configFilePath))
+            if (string.IsNullOrEmpty(inputPath) && string.IsNullOrEmpty(argumentPath))
             {
-                Console.WriteLine("Error: All arguments (-i, -o, -c) are required.");
+                Console.WriteLine("Error: Input Path (-i) is required.");
                 Console.WriteLine("Usage: FlowBreaker.exe -i <inputPath> -o <outputPath> -c <configFilePath>");
                 return;
             }
 
             try
             {
-                Configuration config = new Configuration(configFilePath);
+                Configuration config = null;
+
+                if (!argumentPath.IsNullOrEmpty())
+                {
+                    foreach (string line in File.ReadLines(argumentPath))
+                    {
+                        string trimmedLine = line.Split('#')[0].Trim();
+
+                        if (string.IsNullOrWhiteSpace(trimmedLine)) //Ignore if whole line is comment
+                            continue;
+
+                        string[] parts = trimmedLine.Split('=', 2);
+                        if (parts.Length == 2)
+                        {
+                            string key = parts[0].Trim().ToLower();
+                            string value = parts[1].Trim();
+
+                            switch (key)
+                            {
+                                case "input_path":
+                                    inputPath = value;
+                                    break;
+                                case "output_path":
+                                    outputPath = value;
+                                    break;
+                                case "config_path":
+                                    configFilePath = value;
+                                    break;
+                            }
+                        }
+                    }
+                    config = new Configuration(configFilePath);
+                }
+
+                else
+                {
+                    if (!configFilePath.IsNullOrEmpty())
+                        config = new Configuration(configFilePath);
+
+                    else
+                        config = new Configuration(Path.Combine(Environment.CurrentDirectory, "config.toml"));
+
+                    if (outputPath.IsNullOrEmpty())
+                        outputPath = Environment.CurrentDirectory;
+
+                    if (inputPath.IsNullOrEmpty())
+                        inputPath = Environment.CurrentDirectory;
+                }
+
                 await RunModules(inputPath, outputPath, config);
             }
 
@@ -56,26 +110,6 @@ namespace FlowBreaker
             {
                 Console.WriteLine($"Error: {ex.Message}");
             }
-        }
-
-        static async Task RunWithoutArguments()
-        {
-            string rootDir = "C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Pcaps+Auswertungen\\test_20241110_152738\\useful";
-            rootDir = "C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Pcaps+Auswertungen\\Results\\amp.dns.RRSIG.fragmented_20241112_215014";
-            rootDir = "C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Pcaps+Auswertungen\\Results\\CIC-DDoS-2019-SynFlood_20241113_173032";
-            //rootDir = "C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Pcaps+Auswertungen\\Results\\CIC-DDoS-2019-Benign_20241113_180110";
-            //rootDir = "C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Pcaps+Auswertungen\\Results\\pcaps_PracticalPacketAnalysis_ppa-capture-files\\portscan_20241116_231416";
-            //rootDir = "C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Pcaps+Auswertungen\\Results\\amp.TCP.syn.optionallyACK.optionallysamePort.pcapng_20241212_205015"; // TCP starvation attack
-            rootDir = "C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Pcaps+Auswertungen\\Results\\nmap.scanme.nmap.org.pcapng_20241212_224051"; // Nmap scan unstealthy
-            //rootDir = "C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Pcaps+Auswertungen\\Results\\nmap.stealth.scanme.nmap.org-24_incomplete.pcapng_20241212_225600"; // Nmap scan stealthy
-            rootDir = "C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Pcaps+Auswertungen\\TII-SSRC-23_Dataset\\bruteforce_ssh_20250110_010827"; // SSH brute force
-
-
-            string outputPath = "C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps\\Program_Output";
-            string configPath = Path.Combine("C:\\Data\\Seafile\\StandardLib\\Master\\Masterarbeit\\PacketCaps", "config.toml");
-
-            Configuration config = new Configuration(configPath);
-            await RunModules(rootDir, outputPath, config);
         }
 
         static async Task RunModules(string inputPath, string outputPath, Configuration config)
