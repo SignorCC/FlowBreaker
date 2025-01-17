@@ -40,7 +40,11 @@ public class ConfigurationModel
     public ProtocolSpecificScanConfig ProtocolSpecificScan { get; set; }
     public VersionScanConfig VersionScan { get; set; }
     public ServiceEnumerationConfig ServiceEnumeration { get; set; }
-    public BruteForceConfig BruteForce { get; set; }
+    public CommonPortsAttackConfig CommonPortsAttack { get; set; }
+    public PasswordSprayingConfig PasswordSpraying { get; set; }
+    public SSHBruteForceConfig SSHBruteForce { get; set; }
+    public SSLBruteForceConfig SSLBruteForce { get; set; }
+    public HTTPBruteForceConfig HTTPBruteForce { get; set; }
     public SYNFloodConfig SYNFlood { get; set; }
     public UDPFloodConfig UDPFlood { get; set; }
     public ICMPFloodConfig ICMPFlood { get; set; }
@@ -50,7 +54,6 @@ public class ConfigurationModel
     public ConnectionExhaustionConfig ConnectionExhaustion { get; set; }
     public SlowlorisConfig Slowloris { get; set; }
 
-    public BruteForceConfig ButeForce { get; set; }
 }
 
 public class BasicParameters
@@ -107,12 +110,29 @@ public class ServiceEnumerationConfig
     public int[] Common_Ports { get; set; }
 }
 
-public class BruteForceConfig
+public class CommonPortsAttackConfig
 {
     public List<int> CommonPorts { get; set; }
     public int MinConnectionsPerPort { get; set; }
+}
+
+public class PasswordSprayingConfig
+{
+    public List<int> CommonPorts { get; set; }
     public int PasswordSprayingThreshold { get; set; }
-    public double DictionaryAttackIntervalThreshold { get; set; }
+}
+
+public class SSHBruteForceConfig
+{
+    public int MinConnections { get; set; }
+}
+public class SSLBruteForceConfig
+{
+    public int MinConnections { get; set; }
+}
+public class HTTPBruteForceConfig
+{
+    public int MinConnections { get; set; }
 }
 
 public class SYNFloodConfig
@@ -133,20 +153,17 @@ public class ICMPFloodConfig
 public class DNSAmplificationConfig
 {
     public int DNSThreshold { get; set; }
-    public float AmplificationFactor { get; set; }
     public int MaxDomainRepetitions { get; set; }
 }
 
 public class NTPAmplificationConfig
 {
     public int NTPThreshold { get; set; }
-    public float AmplificationFactor { get; set; }
 }
 
 public class SSDPAmplificationConfig
 {
     public int SSDPThreshold { get; set; }
-    public float AmplificationFactor { get; set; }
 }
 
 public class ConnectionExhaustionConfig

@@ -14,7 +14,7 @@ namespace FlowBreaker
                 await RunWithArguments(args);
             
             else
-                // Basically run with base directory containing an arguments.txt file
+                // Basically run with base directory expecting it to contain an arguments.txt file
                 await RunWithArguments([ "-a", Path.Combine(Environment.CurrentDirectory, "arguments.txt")]);
         }
 
@@ -49,6 +49,7 @@ namespace FlowBreaker
             {
                 Console.WriteLine("Error: Input Path (-i) is required.");
                 Console.WriteLine("Usage: FlowBreaker.exe -i <inputPath> -o <outputPath> -c <configFilePath>");
+                Console.WriteLine("Alternate Usage: FlowBreaker.exe -a <argumentPath>");
                 return;
             }
 
@@ -98,9 +99,6 @@ namespace FlowBreaker
 
                     if (outputPath.IsNullOrEmpty())
                         outputPath = Environment.CurrentDirectory;
-
-                    if (inputPath.IsNullOrEmpty())
-                        inputPath = Environment.CurrentDirectory;
                 }
 
                 await RunModules(inputPath, outputPath, config);

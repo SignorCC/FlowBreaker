@@ -1,0 +1,121 @@
+# This stack saves to /opt/container/zeek - this can be changed by the user,
+# as long as it is consistent!
+services:
+  zeek:
+    image: zeek/zeek:latest
+    volumes:
+      - /opt/container/zeek/zeek-logs:/zeek-logs
+      - /opt/container/zeek/uploads:/uploads:ro
+    working_dir: /zeek-logs
+    user: "root"  # Ensure proper permissions
+    command: tail -f /dev/null
+    restart: always
+
+## Ideally you should access the webserver with a reverse proxy that handles ssl
+  webserver:
+    image: nginx:latest
+    volumes:
+      - /opt/container/zeek/uploads:/usr/share/nginx/html/uploads
+      - /opt/container/zeek/zipped-logs:/usr/share/nginx/html/zipped-logs:ro
+      - /opt/container/zeek/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /opt/container/zeek/nginx/upload.php:/usr/share/nginx/html/upload.php:ro
+    ports:
+      - "9005:80"
+    restart: always
+    networks:
+      - npm_backend
+      - zeek
+
+  php:
+    image: php:7.4-fpm
+    volumes:
+      - /opt/container/zeek/uploads:/usr/share/nginx/html/uploads
+      - /opt/container/zeek/zipped-logs:/usr/share/nginx/html/zipped-logs
+      - /opt/container/zeek/nginx/upload.php:/usr/share/nginx/html/upload.php:ro
+      - /opt/container/zeek/nginx/php.ini:/usr/local/etc/php/php.ini:ro
+    restart: always
+    networks:
+      - zeek
+
+# Simple script that deletes files after 12GB are reached, best practice is to
+# delete files yourself through the WebUI or CLI
+  cleanup:
+    image: debian:latest
+    volumes:
+      - /opt/container/zeek/uploads:/uploads
+    command: >
+      bash -c "
+      while true; do
+        total_size=$$(du -sb /uploads | cut -f1);
+        max_size=$$(( 12 * 1024 * 1024 * 1024 ));
+        if [ $$total_size -gt $$max_size ]; then
+          oldest_file=$$(ls -t /uploads | tail -1);
+          rm /uploads/$$oldest_file;
+        fi;
+        sleep 10;
+      done"
+    restart: always
+
+
+  file_watcher:
+    image: debian:latest
+    volumes:
+      - /opt/container/zeek/uploads:/uploads
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/container/zeek/scripts:/scripts
+      - /opt/container/zeek/zipped-logs:/zipped-logs
+    depends_on:
+      zeek:
+        condition: service_started
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    command: >
+      bash -c "
+      apt-get update && apt-get install -y inotify-tools docker.io;
+      chmod +x /scripts/run_zeek_analysis.sh;
+      while true; do
+        inotifywait -m /uploads -e create -e moved_to |
+        while read path action file; do
+          echo \"The file '$$file' appeared in directory '$$path' via '$$action'\";
+          cd /scripts && ./run_zeek_analysis.sh \"$$file\";
+        done;
+      done"
+    restart: always
+
+  zeek_logs_zipper:
+    image: debian:latest
+    volumes:
+      - /opt/container/zeek/zeek-logs:/zeek-logs
+      - /opt/container/zeek/zipped-logs:/zipped-logs
+    command: >
+      bash -c "
+      apt-get update && apt-get install -y inotify-tools docker.io zip;
+
+      while true; do
+        inotifywait -m /zeek-logs -e create -e moved_to |
+        while read path action folder; do
+          if [ -d \"/zeek-logs/$$folder\" ]; then
+            echo \"New folder '$$folder' detected in /zeek-logs\";
+
+            # Wait for console.log to appear
+            while [ ! -f \"/zeek-logs/$$folder/console.log\" ]; do
+              sleep 5;
+            done;
+
+            echo \"console.log found, assuming Zeek analysis is complete.\";
+            sleep 30;  # Wait for 30 seconds to ensure all files are written
+
+            cd /zeek-logs && zip -r \"/zipped-logs/$$folder.zip\" \"$$folder\";
+            echo \"Zipped '$$folder' and moved to /zipped-logs\";
+
+            # Remove the original folder
+            rm -rf \"/zeek-logs/$$folder\";
+            echo \"Removed original folder '$$folder'\";
+          fi;
+        done;
+      done"
+    restart: always
+
+networks:
+  zeek:
+    external: false

@@ -16,13 +16,17 @@ namespace FlowBreaker
             List<SSLConnection> sslLogs,
             List<HTTPConnection> httpLogs)
         {
-            var bruteForceConfig = settings.GetValue<BruteForceConfig>("BruteForce");
+            var commonPortsAttack = settings.GetValue<CommonPortsAttackConfig>("CommonPortsAttack");
+            var passwordSprayingConfig = settings.GetValue<PasswordSprayingConfig>("PasswordSpraying");
+            var sshBruteForceConfig = settings.GetValue<SSHBruteForceConfig>("SSHBruteForce");
+            var sslBruteForceConfig = settings.GetValue<SSLBruteForceConfig>("SSLBruteForce");
+            var httpBruteForceConfig = settings.GetValue<HTTPBruteForceConfig>("HTTPBruteForce");
 
-            var commonPortAttacksTask = DetectCommonPortAttacksAsync(tcpDestination, bruteForceConfig, sshLogs, sslLogs);
-            var passwordSprayingTask = DetectPasswordSprayingAsync(tcpSource, bruteForceConfig, sshLogs, sslLogs, httpLogs);
-            var sshBruteForceTask = DetectSSHBruteForceAsync(tcpSource, bruteForceConfig, sshLogs);
-            var sslBruteForceTask = DetectSSLBruteForceAsync(tcpSource, bruteForceConfig, sslLogs);
-            var httpBruteForceTask = DetectHTTPBruteForceAsync(tcpSource, bruteForceConfig, httpLogs);
+            var commonPortAttacksTask = DetectCommonPortAttacksAsync(tcpDestination, commonPortsAttack, sshLogs, sslLogs);
+            var passwordSprayingTask = DetectPasswordSprayingAsync(tcpSource, passwordSprayingConfig, sshLogs, sslLogs, httpLogs);
+            var sshBruteForceTask = DetectSSHBruteForceAsync(tcpSource, sshBruteForceConfig, sshLogs);
+            var sslBruteForceTask = DetectSSLBruteForceAsync(tcpSource, sslBruteForceConfig, sslLogs);
+            var httpBruteForceTask = DetectHTTPBruteForceAsync(tcpSource, httpBruteForceConfig, httpLogs);
 
             await Task.WhenAll(commonPortAttacksTask, passwordSprayingTask, sshBruteForceTask, sslBruteForceTask, httpBruteForceTask);
 
@@ -37,7 +41,7 @@ namespace FlowBreaker
         }
 
         private static async Task<Dictionary<string, ConnectionGroup>> DetectCommonPortAttacksAsync(
-            Dictionary<string, ConnectionGroup> input, BruteForceConfig config,
+            Dictionary<string, ConnectionGroup> input, CommonPortsAttackConfig config,
             List<SSHConnection> sshLogs, List<SSLConnection> sslLogs)
         {
             return await Task.Run(() =>
@@ -71,7 +75,7 @@ namespace FlowBreaker
         }
 
         private static async Task<Dictionary<string, ConnectionGroup>> DetectPasswordSprayingAsync(
-            Dictionary<string, ConnectionGroup> input, BruteForceConfig config,
+            Dictionary<string, ConnectionGroup> input, PasswordSprayingConfig config,
             List<SSHConnection> sshLogs, List<SSLConnection> sslLogs, List<HTTPConnection> httpLogs)
         {
             return await Task.Run(() =>
@@ -108,7 +112,7 @@ namespace FlowBreaker
         }
 
         private static async Task<Dictionary<string, ConnectionGroup>> DetectSSHBruteForceAsync(
-            Dictionary<string, ConnectionGroup> input, BruteForceConfig config, List<SSHConnection> sshLogs)
+            Dictionary<string, ConnectionGroup> input, SSHBruteForceConfig config, List<SSHConnection> sshLogs)
         {
             return await Task.Run(() =>
             {
@@ -116,12 +120,12 @@ namespace FlowBreaker
                 foreach (var kvp in input)
                 {
                     var sshConnections = kvp.Value.connections
-                        .Where(c => c.id_resp_p == 22 || c.service == "ssh")
+                        .Where(c => c.service == "ssh")
                         .ToList();
 
                     var sshAttempts = sshLogs.Count(s => sshConnections.Any(c => c.uid == s.uid));
 
-                    if (sshAttempts >= config.MinConnectionsPerPort)
+                    if (sshAttempts >= config.MinConnections)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "SSH Brute Force Attack";
@@ -135,7 +139,7 @@ namespace FlowBreaker
         }
 
         private static async Task<Dictionary<string, ConnectionGroup>> DetectSSLBruteForceAsync(
-            Dictionary<string, ConnectionGroup> input, BruteForceConfig config, List<SSLConnection> sslLogs)
+            Dictionary<string, ConnectionGroup> input, SSLBruteForceConfig config, List<SSLConnection> sslLogs)
         {
             return await Task.Run(() =>
             {
@@ -143,12 +147,12 @@ namespace FlowBreaker
                 foreach (var kvp in input)
                 {
                     var sslConnections = kvp.Value.connections
-                        .Where(c => c.id_resp_p == 443 || c.service == "tls")
+                        .Where(c => c.service == "tls")
                         .ToList();
 
                     var failedSSLHandshakes = sslLogs.Count(s => sslConnections.Any(c => c.uid == s.uid) && !s.established);
 
-                    if (failedSSLHandshakes >= config.MinConnectionsPerPort)
+                    if (failedSSLHandshakes >= config.MinConnections)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "SSL/TLS Brute Force Attack";
@@ -162,7 +166,7 @@ namespace FlowBreaker
         }
 
         private static async Task<Dictionary<string, ConnectionGroup>> DetectHTTPBruteForceAsync(
-            Dictionary<string, ConnectionGroup> input, BruteForceConfig config, List<HTTPConnection> httpLogs)
+            Dictionary<string, ConnectionGroup> input, HTTPBruteForceConfig config, List<HTTPConnection> httpLogs)
         {
             return await Task.Run(() =>
             {
@@ -170,12 +174,12 @@ namespace FlowBreaker
                 foreach (var kvp in input)
                 {
                     var httpConnections = kvp.Value.connections
-                        .Where(c => c.id_resp_p == 80 || c.id_resp_p == 443 || c.service == "http")
+                        .Where(c => c.service == "http")
                         .ToList();
 
                     var httpAttempts = httpLogs.Count(h => httpConnections.Any(c => c.uid == h.uid));
 
-                    if (httpAttempts >= config.MinConnectionsPerPort)
+                    if (httpAttempts >= config.MinConnections)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "HTTP Brute Force Attack";

@@ -24,8 +24,8 @@ namespace FlowBreaker
             var udpFloodTask = DetectUDPFloodAsync(udpDestination, settings.GetValue<UDPFloodConfig>("UDPFlood"), dnsLogs);
             var icmpFloodTask = DetectICMPFloodAsync(icmpDestination, settings.GetValue<ICMPFloodConfig>("ICMPFlood"));
             var dnsAmplificationTask = DetectDNSAmplificationAsync(udpSource, settings.GetValue<DNSAmplificationConfig>("DNSAmplification"), dnsLogs);
-            var ntpAmplificationTask = DetectNTPAmplificationAsync(udpDestination, settings.GetValue<NTPAmplificationConfig>("NTPAmplification"));
-            var ssdpAmplificationTask = DetectSSDPAmplificationAsync(udpDestination, settings.GetValue<SSDPAmplificationConfig>("SSDPAmplification"));
+            var ntpAmplificationTask = DetectNTPAmplificationAsync(udpSource, settings.GetValue<NTPAmplificationConfig>("NTPAmplification"));
+            var ssdpAmplificationTask = DetectSSDPAmplificationAsync(udpSource, settings.GetValue<SSDPAmplificationConfig>("SSDPAmplification"));
             var connectionExhaustionTask = DetectConnectionExhaustionAsync(tcpDestination, settings.GetValue<ConnectionExhaustionConfig>("ConnectionExhaustion"), httpLogs);
             var slowlorisTask = DetectSlowlorisAttackAsync(tcpDestination, settings.GetValue<SlowlorisConfig>("Slowloris"), httpLogs);
 
@@ -142,7 +142,8 @@ namespace FlowBreaker
 
                             string domains = string.Join("\n", redundantQueries.Select(kvp => $"\t\t{kvp.Key} ({kvp.Value})"));
 
-                            cG.reason = $"\tTotal suspicious requests: {totalAnswers} (Threshold: {config.DNSThreshold})\n\tDomains:\n{domains}";
+                            cG.reason = $"\tTotal DNS requests: {dnsResponses.Count} (Threshold: {config.DNSThreshold})\n\tDomains:\n{domains}";
+                            cG.reason += $"\n\tTotal redundant Queries: {totalAnswers} (Threshold: {config.MaxDomainRepetitions})";
                             output[ip] = cG;
                         }
                     }
@@ -161,8 +162,7 @@ namespace FlowBreaker
                 foreach (var kvp in input)
                 {
                     var ntpConnections = kvp.Value.connections.Where(c => c.id_resp_p == 123).ToList();
-                    if (ntpConnections.Count >= config.NTPThreshold &&
-                        ntpConnections.Average(c => c.resp_bytes) / ntpConnections.Average(c => c.orig_bytes) >= config.AmplificationFactor)
+                    if (ntpConnections.Count >= config.NTPThreshold)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "NTP Amplification";
@@ -183,8 +183,7 @@ namespace FlowBreaker
                 foreach (var kvp in input)
                 {
                     var ssdpConnections = kvp.Value.connections.Where(c => c.id_resp_p == 1900).ToList();
-                    if (ssdpConnections.Count >= config.SSDPThreshold &&
-                        ssdpConnections.Average(c => c.resp_bytes) / ssdpConnections.Average(c => c.orig_bytes) >= config.AmplificationFactor)
+                    if (ssdpConnections.Count >= config.SSDPThreshold)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "SSDP Amplification";
@@ -244,5 +243,6 @@ namespace FlowBreaker
                 return output;
             });
         }
+
     }
 }

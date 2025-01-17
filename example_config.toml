@@ -63,11 +63,22 @@ Common_Ports = [
     3389, 5432, 5900, 5985, 5986, 6379, 8080, 8443, 9200, 27017
 ]
 
-[BruteForce]
+[CommonPortsAttack]
 CommonPorts = [22, 23, 3389, 21, 5900]  # SSH, Telnet, RDP, FTP, VNC
 MinConnectionsPerPort = 50
+
+[PasswordSpraying]
+CommonPorts = [22, 23, 3389, 21, 5900]  # SSH, Telnet, RDP, FTP, VNC
 PasswordSprayingThreshold = 50
-DictionaryAttackIntervalThreshold = 0.5
+
+[SSHBruteForce]
+MinConnections = 50
+
+[SSLBruteForce]
+MinConnections = 50
+
+[HTTPBruteForce]
+MinConnections = 50
 
 [SYNFlood]
 SYNThreshold = 1200
@@ -80,16 +91,13 @@ ICMPThreshold = 500
 
 [DNSAmplification]
 DNSThreshold = 100
-AmplificationFactor = 2.0
 MaxDomainRepetitions = 5
 
 [NTPAmplification]
 NTPThreshold = 100
-AmplificationFactor = 10.0
 
 [SSDPAmplification]
 SSDPThreshold = 100
-AmplificationFactor = 10.0
 
 [ConnectionExhaustion]
 ConnectionThreshold = 1000
