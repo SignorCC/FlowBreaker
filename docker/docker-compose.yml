@@ -1,119 +1,65 @@
-# This stack saves to /opt/container/zeek - this can be changed by the user,
+# This stack saves to /home/user/docker/zeek - this can be changed by the user,
 # as long as it is consistent!
+# In order for this script to function properly, the folder permissions need to
+# be set to 766 - otherwise the container won't be able to have write access!
+
+# PLEASE DON'T RUN THIS SCRIPT WITHOUT ANY ACCESS CONTROL AS IT ENABLES
+# ACCESS TO YOUR LOCAL DIRECTORIES THROUGH DOCKER!!!
+# BEST PRACTICE WOULD BE USING A REVERSE PROXY INSTEAD OF FORWARDING THE 80 PORT!
+
+# Before deploying, either change the /home/user/docker/zeek folder to a
+# custom location, or change user to your own username.
+# Make sure the permissions are set before launching
 services:
   zeek:
     image: zeek/zeek:latest
     volumes:
-      - /opt/container/zeek/zeek-logs:/zeek-logs
-      - /opt/container/zeek/uploads:/uploads:ro
+      - /home/user/docker/zeek/zeek-logs:/zeek-logs
+      - /home/user/docker/zeek/uploads:/uploads:ro
     working_dir: /zeek-logs
-    user: "root"  # Ensure proper permissions
+    user: "root"
     command: tail -f /dev/null
     restart: always
 
-## Ideally you should access the webserver with a reverse proxy that handles ssl
   webserver:
     image: nginx:latest
     volumes:
-      - /opt/container/zeek/uploads:/usr/share/nginx/html/uploads
-      - /opt/container/zeek/zipped-logs:/usr/share/nginx/html/zipped-logs:ro
-      - /opt/container/zeek/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - /opt/container/zeek/nginx/upload.php:/usr/share/nginx/html/upload.php:ro
+      - /home/user/docker/zeek/uploads:/usr/share/nginx/html/uploads
+      - /home/user/docker/zeek/zipped-logs:/usr/share/nginx/html/zipped-logs:ro
+      - /home/user/docker/zeek/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /home/user/docker/zeek/nginx/upload.php:/usr/share/nginx/html/upload.php:ro
     ports:
       - "9005:80"
     restart: always
     networks:
-      - npm_backend
       - zeek
 
   php:
     image: php:7.4-fpm
     volumes:
-      - /opt/container/zeek/uploads:/usr/share/nginx/html/uploads
-      - /opt/container/zeek/zipped-logs:/usr/share/nginx/html/zipped-logs
-      - /opt/container/zeek/nginx/upload.php:/usr/share/nginx/html/upload.php:ro
-      - /opt/container/zeek/nginx/php.ini:/usr/local/etc/php/php.ini:ro
+      - /home/user/docker/zeek/uploads:/usr/share/nginx/html/uploads
+      - /home/user/docker/zeek/zipped-logs:/usr/share/nginx/html/zipped-logs
+      - /home/user/docker/zeek/nginx/upload.php:/usr/share/nginx/html/upload.php:ro
+      - /home/user/docker/zeek/nginx/php.ini:/usr/local/etc/php/php.ini:ro
     restart: always
     networks:
       - zeek
 
-# Simple script that deletes files after 12GB are reached, best practice is to
-# delete files yourself through the WebUI or CLI
-  cleanup:
+  zeek_manager:
     image: debian:latest
     volumes:
-      - /opt/container/zeek/uploads:/uploads
-    command: >
-      bash -c "
-      while true; do
-        total_size=$$(du -sb /uploads | cut -f1);
-        max_size=$$(( 12 * 1024 * 1024 * 1024 ));
-        if [ $$total_size -gt $$max_size ]; then
-          oldest_file=$$(ls -t /uploads | tail -1);
-          rm /uploads/$$oldest_file;
-        fi;
-        sleep 10;
-      done"
-    restart: always
-
-
-  file_watcher:
-    image: debian:latest
-    volumes:
-      - /opt/container/zeek/uploads:/uploads
+      - /home/user/docker/zeek/uploads:/uploads
       - /var/run/docker.sock:/var/run/docker.sock
-      - /opt/container/zeek/scripts:/scripts
-      - /opt/container/zeek/zipped-logs:/zipped-logs
+      - /home/user/docker/zeek/scripts:/scripts
+      - /home/user/docker/zeek/zeek-logs:/zeek-logs
+      - /home/user/docker/zeek/zipped-logs:/zipped-logs
+      - /home/user/docker/zeek/scripts/zeek_manager.sh:/zeek_manager.sh:ro
     depends_on:
       zeek:
         condition: service_started
     environment:
       - DOCKER_HOST=unix:///var/run/docker.sock
-    command: >
-      bash -c "
-      apt-get update && apt-get install -y inotify-tools docker.io;
-      chmod +x /scripts/run_zeek_analysis.sh;
-      while true; do
-        inotifywait -m /uploads -e create -e moved_to |
-        while read path action file; do
-          echo \"The file '$$file' appeared in directory '$$path' via '$$action'\";
-          cd /scripts && ./run_zeek_analysis.sh \"$$file\";
-        done;
-      done"
-    restart: always
-
-  zeek_logs_zipper:
-    image: debian:latest
-    volumes:
-      - /opt/container/zeek/zeek-logs:/zeek-logs
-      - /opt/container/zeek/zipped-logs:/zipped-logs
-    command: >
-      bash -c "
-      apt-get update && apt-get install -y inotify-tools docker.io zip;
-
-      while true; do
-        inotifywait -m /zeek-logs -e create -e moved_to |
-        while read path action folder; do
-          if [ -d \"/zeek-logs/$$folder\" ]; then
-            echo \"New folder '$$folder' detected in /zeek-logs\";
-
-            # Wait for console.log to appear
-            while [ ! -f \"/zeek-logs/$$folder/console.log\" ]; do
-              sleep 5;
-            done;
-
-            echo \"console.log found, assuming Zeek analysis is complete.\";
-            sleep 30;  # Wait for 30 seconds to ensure all files are written
-
-            cd /zeek-logs && zip -r \"/zipped-logs/$$folder.zip\" \"$$folder\";
-            echo \"Zipped '$$folder' and moved to /zipped-logs\";
-
-            # Remove the original folder
-            rm -rf \"/zeek-logs/$$folder\";
-            echo \"Removed original folder '$$folder'\";
-          fi;
-        done;
-      done"
+    command: ["/bin/bash", "/zeek_manager.sh"]
     restart: always
 
 networks:

@@ -334,13 +334,13 @@ namespace FlowBreaker
                 if (con.Value.connections.Where(c => c.id_orig_h == con.Key).Count() >= sortByDestination[con.Key].connections.Where(c => c.id_resp_h == con.Key).Count())
                 {
                     con.Value.speaker = true;
-                    sortByDestination[con.Key].listener = true;
+                    sortByDestination[con.Key].speaker = true;
                 }
 
                 else
                 {
                     con.Value.listener = true;
-                    sortByDestination[con.Key].speaker = true;
+                    sortByDestination[con.Key].listener = true;
                 }
 
             }
@@ -431,7 +431,7 @@ namespace FlowBreaker
 
                 // Averaging connections
                 kvp.Value.AverageConnectionsPerSourceIP = (float)kvp.Value.connections.Count();
-                kvp.Value.AverageConnectionsPerDestinationIP = (float) kvp.Value.connections.Count() / kvp.Value.dest_ips.Count(); ;
+                kvp.Value.AverageConnectionsPerDestinationIP = (float) kvp.Value.connections.Count() / kvp.Value.dest_ips.Count();
                 kvp.Value.AverageConnectionsPerSourcePort = (float)kvp.Value.connections.Count() / kvp.Value.src_ports.Count();
                 kvp.Value.AverageConnectionsPerDestinationPort = (float)kvp.Value.connections.Count() / kvp.Value.dest_ports.Count();
                 kvp.Value.AverageConnectionsPerUniqueIP = (float)kvp.Value.connections.Count() / kvp.Value.dest_ips.Count();
