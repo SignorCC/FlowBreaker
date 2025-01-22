@@ -2,15 +2,14 @@
 
 ## Using FlowBreaker
 In order to use FlowBreaker, please refer to the documentation - from this
-GitHub repo you will need the current release for your platform, either the Self
+GitHub repo you will need the current release for your platform, either the self
 contained, or if you already have .NET 7 installed, the Framework
 dependent release. FlowBreaker is a command line utility that relies on pcaps
 being preprocessed with Zeek. Since Zeek itself is a bit of a hassle to set up,
 below is a manual on how to run a webserver that handles all of this for you.
 
 ## Setting up FlowBreaker's Zeek Webserver with docker compose
-
-## Deployment Instructions
+### Deployment Instructions
 
 The docker installation can be done by simply running the deploy_docker.sh script
 using sudo or doas on your machine. This script will clone the repo and setup
@@ -41,7 +40,7 @@ This script does the following:
     By doing so, you can shield the container from the internet and have https.
     Make sure that npm and zeek-webserver-1 are in the same network for this to work.
 
-## Configuration
+### Configuration
 
 Before running `docker compose up`, you need to modify the `docker-compose.yml` file:
 
@@ -56,7 +55,7 @@ Before running `docker compose up`, you need to modify the `docker-compose.yml` 
    It's recommended to use a reverse proxy for access control instead of directly exposing port 80.
    This is to stop others from uploading potentially malicious files to your machine.
 
-## Security Considerations
+### Security Considerations
 
 - The script sets directory permissions to 777 (read, write, execute for all).
   Consider using a more sophisticated approach, e.g. by named docker volumes.
@@ -67,7 +66,7 @@ Before running `docker compose up`, you need to modify the `docker-compose.yml` 
 - Using a reverse proxy is recommended for better security instead of directly exposing ports.
   A possibility would be nginx proxy manager, which also handles ssl.
 
-## Services
+### Services
 
 The docker-compose file sets up the following services:
 
@@ -76,7 +75,7 @@ The docker-compose file sets up the following services:
 3. `php`: PHP-FPM for processing PHP scripts
 4. `zeek_manager`: Manages Zeek log processing and other tasks
 
-## Known Issues
+### Known Issues
 
 This setup isn't meant for multitasking. Uploading the next .pcap file before
 the current has finished processed, should work in theory, but may lead to UI
@@ -84,7 +83,7 @@ bugs. There is also no concurrency in place, meaning that jobs finish in sequenc
 Usually Zeek's analysis is very fast (2-3 seconds) and uploading and zipping take
 the longest. If in doubt, restart the stack and try again.
 
-## How does this stack work?
+### How does this stack work?
 
 The Zeek image doesn't run perpetually without a command, so this stack keeps it
 active. The zeek_manager.sh script watches for changes in the upload directory and
