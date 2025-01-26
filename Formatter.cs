@@ -110,6 +110,15 @@ namespace FlowBreaker
                 sb.AppendLine($"\tListener: {group.listener}");
                 sb.AppendLine($"\tSpeaker: {group.speaker}");
 
+                // Flagging Scores
+                sb.AppendLine("Flagging Scores (Current Value/Average Value):");
+                sb.AppendLine($"\tOutgoing Port Activity: {group.valHighOutPort}");
+                sb.AppendLine($"\tIncoming Port Activity: {group.valHighInPort}");
+                sb.AppendLine($"\tOutgoing IP Activity: {group.valHighOutIP}");
+                sb.AppendLine($"\tIncoming IP Activity: {group.valHighInIP}");
+                sb.AppendLine($"\tOutgoing Connections: {group.valHighOutConnIP}");
+                sb.AppendLine($"\tIncoming Connections: {group.valHighInConnIP}");
+
                 // Average Values
                 sb.AppendLine("Average Values:");
                 sb.AppendLine($"\tConnections per Destination IP: {group.AverageConnectionsPerDestinationIP}");
@@ -127,19 +136,20 @@ namespace FlowBreaker
         public static string FormatConnectionsAsCsv(Dictionary<string, ConnectionGroup> ips)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("IP,TotalConnections,Protocol,Service,Classification,UniqueDestinationIPs,UniqueSourceIPs,UniqueDestinationPorts,UniqueSourcePorts,HighOutgoingPortActivity,HighIncomingPortActivity,HighOutgoingIPActivity,HighIncomingIPActivity,HighOutgoingConnections,HighIncomingConnections,Listener,Speaker,AvgConnectionsPerDestIP,AvgConnectionsPerSourceIP,AvgConnectionsPerDestPort,AvgConnectionsPerSourcePort,AvgConnectionsPerUniqueIP");
+            sb.AppendLine("IP,TotalConnections,Protocol,Service,Classification,UniqueDestinationIPs,UniqueSourceIPs,UniqueDestinationPorts,UniqueSourcePorts,HighOutgoingPortActivity,HighIncomingPortActivity,HighOutgoingIPActivity,HighIncomingIPActivity,HighOutgoingConnections,HighIncomingConnections,Listener,Speaker,OutgoingPortActivityScore,IncomingPortActivityScore,OutgoingIPActivityScore,IncomingIPActivityScore,OutgoingConnectionsScore,IncomingConnectionsScore,AvgConnectionsPerDestIP,AvgConnectionsPerSourceIP,AvgConnectionsPerDestPort,AvgConnectionsPerSourcePort,AvgConnectionsPerUniqueIP");
 
             foreach (var kvp in ips.OrderByDescending(x => x.Value.connections.Count))
             {
                 var group = kvp.Value;
-                string averageValues = $"{group.AverageConnectionsPerDestinationIP.ToString().Replace(",",".")}," +
+                string averageValues = $"{group.AverageConnectionsPerDestinationIP.ToString().Replace(",", ".")}," +
                     $"{group.AverageConnectionsPerSourceIP.ToString().Replace(",", ".")}," +
-                    $"{group.AverageConnectionsPerDestinationPort.ToString().Replace(",",".")}," +
+                    $"{group.AverageConnectionsPerDestinationPort.ToString().Replace(",", ".")}," +
                     $"{group.AverageConnectionsPerSourcePort.ToString().Replace(",", ".")}," +
                     $"{group.AverageConnectionsPerUniqueIP.ToString().Replace(",", ".")}";
-                
+
                 sb.AppendLine($"{kvp.Key},{group.connections.Count},{group.proto},{group.service},{group.classification},{group.dest_ips.Count},{group.src_ips.Count},{group.dest_ports.Count},{group.src_ports.Count},{group.highOutPort},{group.highInPort},{group.highOutIP},{group.highInIP},{group.highOutConnIP},{group.highInConnIP},{group.listener},{group.speaker}," +
-                   averageValues);
+                   $"{group.valHighOutPort},{group.valHighInPort},{group.valHighOutIP},{group.valHighInIP},{group.valHighOutConnIP},{group.valHighInConnIP}," +
+                   $"{averageValues}");
             }
 
             return sb.ToString();
@@ -167,6 +177,12 @@ namespace FlowBreaker
                     kvp.Value.highInConnIP,
                     kvp.Value.listener,
                     kvp.Value.speaker,
+                    OutgoingPortActivityScore = kvp.Value.valHighOutPort,
+                    IncomingPortActivityScore = kvp.Value.valHighInPort,
+                    OutgoingIPActivityScore = kvp.Value.valHighOutIP,
+                    IncomingIPActivityScore = kvp.Value.valHighInIP,
+                    OutgoingConnectionsScore = kvp.Value.valHighOutConnIP,
+                    IncomingConnectionsScore = kvp.Value.valHighInConnIP,
                     kvp.Value.AverageConnectionsPerDestinationIP,
                     kvp.Value.AverageConnectionsPerSourceIP,
                     kvp.Value.AverageConnectionsPerDestinationPort,

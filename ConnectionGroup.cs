@@ -24,6 +24,13 @@ namespace FlowBreaker
         public bool listener { get; set; }
         public bool speaker { get; set; }
 
+        public float valHighOutPort { get; set; }
+        public float valHighInPort { get; set; }
+        public float valHighOutIP { get; set; }
+        public float valHighInIP { get; set; }
+        public float valHighOutConnIP { get; set; }
+        public float valHighInConnIP { get; set; }
+
         // Fields for activity level
         public float AverageConnectionsPerDestinationIP { get; set; }
         public float AverageConnectionsPerSourceIP { get; set; }
@@ -62,6 +69,13 @@ namespace FlowBreaker
             AverageConnectionsPerSourcePort = -1;
 
             AverageConnectionsPerUniqueIP = -1;
+
+            valHighInConnIP = -1;
+            valHighOutConnIP = -1;
+            valHighInIP = -1;
+            valHighOutIP = -1;
+            valHighInPort = -1;
+            valHighOutPort = -1;
 
 
             classification = "UNDEF";
@@ -174,12 +188,18 @@ namespace FlowBreaker
                 classification = this.classification,
                 reason = this.reason,
 
-                // Adding the new properties
                 AverageConnectionsPerDestinationIP = this.AverageConnectionsPerDestinationIP,
                 AverageConnectionsPerSourceIP = this.AverageConnectionsPerSourceIP,
                 AverageConnectionsPerDestinationPort = this.AverageConnectionsPerDestinationPort,
                 AverageConnectionsPerSourcePort = this.AverageConnectionsPerSourcePort,
                 AverageConnectionsPerUniqueIP = this.AverageConnectionsPerUniqueIP,
+
+                valHighInConnIP = this.valHighInConnIP,
+                valHighOutConnIP = this.valHighOutConnIP,
+                valHighInIP = this.valHighInIP,
+                valHighOutIP = this.valHighOutIP,
+                valHighInPort = this.valHighInPort,
+                valHighOutPort = this.valHighOutPort
             };
 
             // Deep copy dictionaries

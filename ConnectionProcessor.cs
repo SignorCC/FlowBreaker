@@ -428,9 +428,14 @@ namespace FlowBreaker
                 if (kvp.Value.connections.Count() >= avgConnectionsPerDestIP * Threshold_Connections_Per_Destination_IP)
                     kvp.Value.highOutConnIP = true;
 
+                // Populate values used for flagging
+                kvp.Value.valHighOutPort = (float) kvp.Value.src_ports.Count() / avgUniqueSrcPorts;
+                kvp.Value.valHighOutIP = (float) kvp.Value.dest_ips.Count() / avgUniqueDestIPs;
+                kvp.Value.valHighOutConnIP = (float) kvp.Value.connections.Count() / avgConnectionsPerDestIP;
+
 
                 // Averaging connections
-                kvp.Value.AverageConnectionsPerSourceIP = (float)kvp.Value.connections.Count();
+                kvp.Value.AverageConnectionsPerSourceIP = kvp.Value.connections.Count();
                 kvp.Value.AverageConnectionsPerDestinationIP = (float) kvp.Value.connections.Count() / kvp.Value.dest_ips.Count();
                 kvp.Value.AverageConnectionsPerSourcePort = (float)kvp.Value.connections.Count() / kvp.Value.src_ports.Count();
                 kvp.Value.AverageConnectionsPerDestinationPort = (float)kvp.Value.connections.Count() / kvp.Value.dest_ports.Count();
@@ -442,6 +447,10 @@ namespace FlowBreaker
                     sortByDestination[kvp.Key].highOutPort = kvp.Value.highOutPort;
                     sortByDestination[kvp.Key].highOutIP = kvp.Value.highOutIP;
                     sortByDestination[kvp.Key].highOutConnIP = kvp.Value.highOutConnIP;
+
+                    sortByDestination[kvp.Key].valHighOutPort = kvp.Value.valHighOutPort;
+                    sortByDestination[kvp.Key].valHighOutIP = kvp.Value.valHighOutIP;
+                    sortByDestination[kvp.Key].valHighOutConnIP = kvp.Value.valHighOutConnIP;
                 }
 
             }
@@ -460,11 +469,16 @@ namespace FlowBreaker
                     kvp.Value.highInConnIP = true;
 
                 // Averaging connections             
-                kvp.Value.AverageConnectionsPerDestinationIP = (float)kvp.Value.connections.Count();
+                kvp.Value.AverageConnectionsPerDestinationIP = kvp.Value.connections.Count();
                 kvp.Value.AverageConnectionsPerSourceIP = (float)kvp.Value.connections.Count() / kvp.Value.src_ips.Count();
                 kvp.Value.AverageConnectionsPerSourcePort = (float) kvp.Value.connections.Count() / kvp.Value.src_ports.Count();
                 kvp.Value.AverageConnectionsPerDestinationPort = (float) kvp.Value.connections.Count() / kvp.Value.dest_ports.Count();
                 kvp.Value.AverageConnectionsPerUniqueIP = (float)kvp.Value.connections.Count() / kvp.Value.src_ips.Count();
+
+                // Populate values used for flagging
+                kvp.Value.valHighInPort = (float)kvp.Value.dest_ports.Count() / avgUniqueDestPorts;
+                kvp.Value.valHighInIP = (float)kvp.Value.src_ips.Count() / avgUniqueSrcIPs;
+                kvp.Value.valHighInConnIP = (float)kvp.Value.connections.Count() / avgConnectionsPerSrcIP;
 
                 // Set calculations in other Dictionary as well
                 if (sortBySource.ContainsKey(kvp.Key))
@@ -472,6 +486,10 @@ namespace FlowBreaker
                     sortBySource[kvp.Key].highInPort = kvp.Value.highInPort;
                     sortBySource[kvp.Key].highInIP = kvp.Value.highInIP;
                     sortBySource[kvp.Key].highInConnIP = kvp.Value.highInConnIP;
+
+                    sortBySource[kvp.Key].valHighInPort = kvp.Value.valHighInPort;
+                    sortBySource[kvp.Key].valHighInIP = kvp.Value.valHighInIP;
+                    sortBySource[kvp.Key].valHighInConnIP = kvp.Value.valHighInConnIP;
                 }  
 
             }
