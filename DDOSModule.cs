@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Concurrent;
 
 namespace FlowBreaker
 {
@@ -20,41 +21,48 @@ namespace FlowBreaker
             List<SSLConnection> sslLogs,
             List<HTTPConnection> httpLogs)
         {
-            var synFloodTask = DetectSYNFloodAsync(tcpDestination, settings.GetValue<SYNFloodConfig>("SYNFlood"), sslLogs);
-            var udpFloodTask = DetectUDPFloodAsync(udpDestination, settings.GetValue<UDPFloodConfig>("UDPFlood"), dnsLogs);
-            var icmpFloodTask = DetectICMPFloodAsync(icmpDestination, settings.GetValue<ICMPFloodConfig>("ICMPFlood"));
-            var dnsAmplificationTask = DetectDNSAmplificationAsync(udpSource, settings.GetValue<DNSAmplificationConfig>("DNSAmplification"), dnsLogs);
-            var ntpAmplificationTask = DetectNTPAmplificationAsync(udpSource, settings.GetValue<NTPAmplificationConfig>("NTPAmplification"));
-            var ssdpAmplificationTask = DetectSSDPAmplificationAsync(udpSource, settings.GetValue<SSDPAmplificationConfig>("SSDPAmplification"));
-            var connectionExhaustionTask = DetectConnectionExhaustionAsync(tcpDestination, settings.GetValue<ConnectionExhaustionConfig>("ConnectionExhaustion"), httpLogs);
-            var slowlorisTask = DetectSlowlorisAttackAsync(tcpDestination, settings.GetValue<SlowlorisConfig>("Slowloris"), httpLogs);
+            // Pre-process logs for faster lookups
+            var sslLogSet = new HashSet<string>(sslLogs.Where(s => !s.established).Select(s => s.uid));
+            var dnsLogDict = dnsLogs.GroupBy(d => d.id_resp_h).ToDictionary(g => g.Key, g => g.ToList());
+            var httpLogDict = httpLogs.GroupBy(h => h.uid).ToDictionary(g => g.Key, g => g.First());
 
-            await Task.WhenAll(synFloodTask, udpFloodTask, icmpFloodTask, dnsAmplificationTask, ntpAmplificationTask,
-                ssdpAmplificationTask, connectionExhaustionTask, slowlorisTask);
+            var tasks = new[]
+            {
+                DetectSYNFloodAsync(tcpDestination, settings.GetValue<SYNFloodConfig>("SYNFlood"), sslLogSet),
+                DetectUDPFloodAsync(udpDestination, settings.GetValue<UDPFloodConfig>("UDPFlood"), dnsLogDict),
+                DetectICMPFloodAsync(icmpDestination, settings.GetValue<ICMPFloodConfig>("ICMPFlood")),
+                DetectDNSAmplificationAsync(udpSource, settings.GetValue<DNSAmplificationConfig>("DNSAmplification"), dnsLogDict),
+                DetectNTPAmplificationAsync(udpSource, settings.GetValue<NTPAmplificationConfig>("NTPAmplification")),
+                DetectSSDPAmplificationAsync(udpSource, settings.GetValue<SSDPAmplificationConfig>("SSDPAmplification")),
+                DetectConnectionExhaustionAsync(tcpDestination, settings.GetValue<ConnectionExhaustionConfig>("ConnectionExhaustion")),
+                DetectSlowlorisAttackAsync(tcpDestination, settings.GetValue<SlowlorisConfig>("Slowloris"), httpLogDict)
+            };
+
+            await Task.WhenAll(tasks);
 
             return new Dictionary<string, Dictionary<string, ConnectionGroup>>
             {
-                ["SYNFlood"] = await synFloodTask,
-                ["UDPFlood"] = await udpFloodTask,
-                ["ICMPFlood"] = await icmpFloodTask,
-                ["DNSAmplification"] = await dnsAmplificationTask,
-                ["NTPAmplification"] = await ntpAmplificationTask,
-                ["SSDPAmplification"] = await ssdpAmplificationTask,
-                ["ConnectionExhaustion"] = await connectionExhaustionTask,
-                ["Slowloris"] = await slowlorisTask
+                ["SYNFlood"] = await tasks[0],
+                ["UDPFlood"] = await tasks[1],
+                ["ICMPFlood"] = await tasks[2],
+                ["DNSAmplification"] = await tasks[3],
+                ["NTPAmplification"] = await tasks[4],
+                ["SSDPAmplification"] = await tasks[5],
+                ["ConnectionExhaustion"] = await tasks[6],
+                ["Slowloris"] = await tasks[7]
             };
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectSYNFloodAsync(
-            Dictionary<string, ConnectionGroup> input, SYNFloodConfig config, List<SSLConnection> sslLogs)
+        private static Task<Dictionary<string, ConnectionGroup>> DetectSYNFloodAsync(
+            Dictionary<string, ConnectionGroup> input, SYNFloodConfig config, HashSet<string> failedSslHandshakes)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
                     var synConnections = kvp.Value.connections.Count(c => c.history == "S");
-                    var failedSSLHandshakes = sslLogs.Count(s => kvp.Value.connections.Any(c => c.uid == s.uid) && !s.established);
+                    var failedSSLHandshakes = kvp.Value.connections.Count(c => failedSslHandshakes.Contains(c.uid));
 
                     if (synConnections + failedSSLHandshakes >= config.SYNThreshold)
                     {
@@ -63,21 +71,21 @@ namespace FlowBreaker
                         cG.reason = $"High number of SYN packets: {synConnections}, Failed SSL handshakes: {failedSSLHandshakes}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectUDPFloodAsync(
-            Dictionary<string, ConnectionGroup> input, UDPFloodConfig config, List<DNSConnection> dnsLogs)
+        private static Task<Dictionary<string, ConnectionGroup>> DetectUDPFloodAsync(
+            Dictionary<string, ConnectionGroup> input, UDPFloodConfig config, Dictionary<string, List<DNSConnection>> dnsLogs)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
                     var udpConnections = kvp.Value.connections.Count;
-                    var dnsQueries = dnsLogs.Count(d => kvp.Value.connections.Any(c => c.uid == d.uid));
+                    var dnsQueries = dnsLogs.TryGetValue(kvp.Key, out var logs) ? logs.Count : 0;
 
                     if (udpConnections >= config.UDPThreshold)
                     {
@@ -86,18 +94,18 @@ namespace FlowBreaker
                         cG.reason = $"High number of UDP packets: {udpConnections}, DNS queries: {dnsQueries}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectICMPFloodAsync(
+        private static Task<Dictionary<string, ConnectionGroup>> DetectICMPFloodAsync(
             Dictionary<string, ConnectionGroup> input, ICMPFloodConfig config)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
                     if (kvp.Value.connections.Count >= config.ICMPThreshold)
                     {
@@ -106,130 +114,119 @@ namespace FlowBreaker
                         cG.reason = $"High number of ICMP packets: {kvp.Value.connections.Count}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectDNSAmplificationAsync(
-            Dictionary<string, ConnectionGroup> input, DNSAmplificationConfig config, List<DNSConnection> dnsLogs)
+        private static Task<Dictionary<string, ConnectionGroup>> DetectDNSAmplificationAsync(
+            Dictionary<string, ConnectionGroup> input, DNSAmplificationConfig config, Dictionary<string, List<DNSConnection>> dnsLogs)
         {
-            // This method works on detecting redundant DNS queries, for which 2 conditions must be met:
-            // The total number of DNS queries >= DNSThreshold and the number of queries for a single domain >= MaxDomainRepetitions
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
                     string ip = kvp.Key;
-                    var dnsResponses = dnsLogs.Where(log => log.id_orig_h == ip).ToList();
-
-                    if (dnsResponses.Count >= config.DNSThreshold)
+                    if (dnsLogs.TryGetValue(ip, out var dnsResponses) && dnsResponses.Count >= config.DNSThreshold)
                     {
                         var redundantQueries = dnsResponses
                             .GroupBy(d => d.query ?? "Unknown")
                             .Where(g => g.Count() >= config.MaxDomainRepetitions)
                             .ToDictionary(g => g.Key, g => g.Count());
 
-
-                        var totalAnswers = redundantQueries.Sum(kvp => kvp.Value);
-
                         if (redundantQueries.Any())
                         {
                             var cG = kvp.Value.Copy();
                             cG.classification = "DNS Amplification";
-
                             string domains = string.Join("\n", redundantQueries.Select(kvp => $"\t\t{kvp.Key} ({kvp.Value})"));
-
                             cG.reason = $"\tTotal DNS requests: {dnsResponses.Count} (Threshold: {config.DNSThreshold})\n\tDomains:\n{domains}";
-                            cG.reason += $"\n\tTotal redundant Queries: {totalAnswers} (Threshold: {config.MaxDomainRepetitions})";
+                            cG.reason += $"\n\tTotal redundant Queries: {redundantQueries.Values.Sum()} (Threshold: {config.MaxDomainRepetitions})";
                             output[ip] = cG;
                         }
                     }
-                }
-
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectNTPAmplificationAsync(
+        private static Task<Dictionary<string, ConnectionGroup>> DetectNTPAmplificationAsync(
             Dictionary<string, ConnectionGroup> input, NTPAmplificationConfig config)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
-                    var ntpConnections = kvp.Value.connections.Where(c => c.id_resp_p == 123).ToList();
-                    if (ntpConnections.Count >= config.NTPThreshold)
+                    var ntpConnections = kvp.Value.connections.Count(c => c.id_resp_p == 123);
+                    if (ntpConnections >= config.NTPThreshold)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "NTP Amplification";
-                        cG.reason = $"Potential NTP amplification attack detected";
+                        cG.reason = $"Potential NTP amplification attack detected. NTP connections: {ntpConnections}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectSSDPAmplificationAsync(
+        private static Task<Dictionary<string, ConnectionGroup>> DetectSSDPAmplificationAsync(
             Dictionary<string, ConnectionGroup> input, SSDPAmplificationConfig config)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
-                    var ssdpConnections = kvp.Value.connections.Where(c => c.id_resp_p == 1900).ToList();
-                    if (ssdpConnections.Count >= config.SSDPThreshold)
+                    var ssdpConnections = kvp.Value.connections.Count(c => c.id_resp_p == 1900);
+                    if (ssdpConnections >= config.SSDPThreshold)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "SSDP Amplification";
-                        cG.reason = $"Potential SSDP amplification attack detected";
+                        cG.reason = $"Potential SSDP amplification attack detected. SSDP connections: {ssdpConnections}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectConnectionExhaustionAsync(
-            Dictionary<string, ConnectionGroup> input, ConnectionExhaustionConfig config, List<HTTPConnection> httpLogs)
+        private static Task<Dictionary<string, ConnectionGroup>> DetectConnectionExhaustionAsync(
+            Dictionary<string, ConnectionGroup> input, ConnectionExhaustionConfig config)
         {
-            // This method works by checking for a high number of connections with minimal data transfer that stay open for long
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
-                    var totalConnections = kvp.Value.connections.Where(c => c.orig_bytes + c.resp_bytes <= config.MaxBytes && c.duration >= config.MinDuration);
+                    var totalConnections = kvp.Value.connections.Count(c => c.orig_bytes + c.resp_bytes <= config.MaxBytes && c.duration >= config.MinDuration);
 
-                    if (totalConnections.Count() >= config.ConnectionThreshold)
+                    if (totalConnections >= config.ConnectionThreshold)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "Connection Exhaustion";
-                        cG.reason = $"High number of connections with small data (<={config.MaxBytes}) but long duration >= {config.MinDuration}: Total: {totalConnections.Count()}";
+                        cG.reason = $"High number of connections with small data (<={config.MaxBytes}) but long duration >= {config.MinDuration}: Total: {totalConnections}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectSlowlorisAttackAsync(
-            Dictionary<string, ConnectionGroup> input, SlowlorisConfig config, List<HTTPConnection> httpLogs)
+        private static Task<Dictionary<string, ConnectionGroup>> DetectSlowlorisAttackAsync(
+            Dictionary<string, ConnectionGroup> input, SlowlorisConfig config, Dictionary<string, HTTPConnection> httpLogs)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
-                    var halfOpenConnections = kvp.Value.connections.Count(c => c.conn_state == "S1" || c.conn_state == "SF" && c.duration >= config.MinDuration);
-                    var suspiciousHTTPConnections = httpLogs.Count(h => kvp.Value.connections.Any(c => c.uid == h.uid) &&
-                                                                        (h.method == "GET" || h.method == "POST") &&
-                                                                        h.request_body_len == 0);
+                    var halfOpenConnections = kvp.Value.connections.Count(c => c.conn_state == "S1" || (c.conn_state == "SF" && c.duration >= config.MinDuration));
+                    var suspiciousHTTPConnections = kvp.Value.connections.Count(c =>
+                        httpLogs.TryGetValue(c.uid, out var httpConn) &&
+                        (httpConn.method == "GET" || httpConn.method == "POST") &&
+                        httpConn.request_body_len == 0);
 
                     if (halfOpenConnections + suspiciousHTTPConnections >= config.HalfOpenThreshold)
                     {
@@ -239,10 +236,9 @@ namespace FlowBreaker
                                     $"Suspicious HTTP connections: {suspiciousHTTPConnections}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
-
     }
 }

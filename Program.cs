@@ -271,28 +271,13 @@ namespace FlowBreaker
                     string baseName = Path.Combine(path, kvp.Key);
                     return new[]
                     {
-                    WriteLogFileAsync(baseName + ".log", Formatter.FormatConnections(kvp.Value)),
-                    WriteCsvFileAsync(baseName + ".csv", Formatter.FormatConnectionsAsCsv(kvp.Value)),
-                    WriteJsonFileAsync(baseName + ".json", Formatter.FormatConnectionsAsJson(kvp.Value))
+                Formatter.FormatConnectionsAsync(kvp.Value, baseName + ".log"),
+                Formatter.FormatConnectionsAsCsvAsync(kvp.Value, baseName + ".csv"),
+                Formatter.FormatConnectionsAsJsonAsync(kvp.Value, baseName + ".json")
                     };
                 });
 
             await Task.WhenAll(writeTasks);
-        }
-
-        private static async Task WriteLogFileAsync(string filePath, string content)
-        {
-            await File.WriteAllTextAsync(filePath, content);
-        }
-
-        private static async Task WriteCsvFileAsync(string filePath, string content)
-        {
-            await File.WriteAllTextAsync(filePath, content);
-        }
-
-        private static async Task WriteJsonFileAsync(string filePath, string content)
-        {
-            await File.WriteAllTextAsync(filePath, content);
         }
 
 

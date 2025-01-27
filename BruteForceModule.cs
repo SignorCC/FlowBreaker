@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Concurrent;
 
 namespace FlowBreaker
 {
@@ -16,46 +17,54 @@ namespace FlowBreaker
             List<SSLConnection> sslLogs,
             List<HTTPConnection> httpLogs)
         {
+            // Pre-process logs for faster lookups
+            var sshLogDict = sshLogs.GroupBy(s => s.uid).ToDictionary(g => g.Key, g => g.First());
+            var sslLogDict = sslLogs.GroupBy(s => s.uid).ToDictionary(g => g.Key, g => g.First());
+            var httpLogDict = httpLogs.GroupBy(h => h.uid).ToDictionary(g => g.Key, g => g.First());
+
             var commonPortsAttack = settings.GetValue<CommonPortsAttackConfig>("CommonPortsAttack");
             var passwordSprayingConfig = settings.GetValue<PasswordSprayingConfig>("PasswordSpraying");
             var sshBruteForceConfig = settings.GetValue<SSHBruteForceConfig>("SSHBruteForce");
             var sslBruteForceConfig = settings.GetValue<SSLBruteForceConfig>("SSLBruteForce");
             var httpBruteForceConfig = settings.GetValue<HTTPBruteForceConfig>("HTTPBruteForce");
 
-            var commonPortAttacksTask = DetectCommonPortAttacksAsync(tcpDestination, commonPortsAttack, sshLogs, sslLogs);
-            var passwordSprayingTask = DetectPasswordSprayingAsync(tcpSource, passwordSprayingConfig, sshLogs, sslLogs, httpLogs);
-            var sshBruteForceTask = DetectSSHBruteForceAsync(tcpSource, sshBruteForceConfig, sshLogs);
-            var sslBruteForceTask = DetectSSLBruteForceAsync(tcpSource, sslBruteForceConfig, sslLogs);
-            var httpBruteForceTask = DetectHTTPBruteForceAsync(tcpSource, httpBruteForceConfig, httpLogs);
+            var tasks = new[]
+            {
+                DetectCommonPortAttacksAsync(tcpDestination, commonPortsAttack, sshLogDict, sslLogDict),
+                DetectPasswordSprayingAsync(tcpSource, passwordSprayingConfig, sshLogDict, sslLogDict, httpLogDict),
+                DetectSSHBruteForceAsync(tcpSource, sshBruteForceConfig, sshLogDict),
+                DetectSSLBruteForceAsync(tcpSource, sslBruteForceConfig, sslLogDict),
+                DetectHTTPBruteForceAsync(tcpSource, httpBruteForceConfig, httpLogDict)
+            };
 
-            await Task.WhenAll(commonPortAttacksTask, passwordSprayingTask, sshBruteForceTask, sslBruteForceTask, httpBruteForceTask);
+            await Task.WhenAll(tasks);
 
             return new Dictionary<string, Dictionary<string, ConnectionGroup>>
             {
-                ["CommonPortAttacks"] = await commonPortAttacksTask,
-                ["PasswordSpraying"] = await passwordSprayingTask,
-                ["SSHBruteForce"] = await sshBruteForceTask,
-                ["SSLBruteForce"] = await sslBruteForceTask,
-                ["HTTPBruteForce"] = await httpBruteForceTask
+                ["CommonPortAttacks"] = await tasks[0],
+                ["PasswordSpraying"] = await tasks[1],
+                ["SSHBruteForce"] = await tasks[2],
+                ["SSLBruteForce"] = await tasks[3],
+                ["HTTPBruteForce"] = await tasks[4]
             };
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectCommonPortAttacksAsync(
+        private static Task<Dictionary<string, ConnectionGroup>> DetectCommonPortAttacksAsync(
             Dictionary<string, ConnectionGroup> input, CommonPortsAttackConfig config,
-            List<SSHConnection> sshLogs, List<SSLConnection> sslLogs)
+            Dictionary<string, SSHConnection> sshLogs, Dictionary<string, SSLConnection> sslLogs)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
                     var suspiciousConnections = config.CommonPorts
                         .Select(port => new
                         {
                             Port = port,
                             Count = kvp.Value.connections.Count(c => c.id_resp_p == port),
-                            SSHAttempts = sshLogs.Count(s => s.id_resp_p == port && kvp.Value.connections.Any(c => c.uid == s.uid)),
-                            SSLAttempts = sslLogs.Count(s => s.id_resp_p == port && kvp.Value.connections.Any(c => c.uid == s.uid) && !s.established)
+                            SSHAttempts = kvp.Value.connections.Count(c => c.id_resp_p == port && sshLogs.ContainsKey(c.uid)),
+                            SSLAttempts = kvp.Value.connections.Count(c => c.id_resp_p == port && sslLogs.TryGetValue(c.uid, out var ssl) && !ssl.established)
                         })
                         .Where(x => x.Count >= config.MinConnectionsPerPort)
                         .ToList();
@@ -69,19 +78,19 @@ namespace FlowBreaker
                                 $"Port {x.Port}: {x.Count} (SSH: {x.SSHAttempts}, SSL: {x.SSLAttempts})"));
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectPasswordSprayingAsync(
+        private static Task<Dictionary<string, ConnectionGroup>> DetectPasswordSprayingAsync(
             Dictionary<string, ConnectionGroup> input, PasswordSprayingConfig config,
-            List<SSHConnection> sshLogs, List<SSLConnection> sslLogs, List<HTTPConnection> httpLogs)
+            Dictionary<string, SSHConnection> sshLogs, Dictionary<string, SSLConnection> sslLogs, Dictionary<string, HTTPConnection> httpLogs)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
                     var relevantConnections = kvp.Value.connections
                         .Where(c => config.CommonPorts.Contains(c.id_resp_p))
@@ -92,9 +101,9 @@ namespace FlowBreaker
                         .Distinct()
                         .Count();
 
-                    var sshAttempts = sshLogs.Count(s => relevantConnections.Any(c => c.uid == s.uid));
-                    var sslAttempts = sslLogs.Count(s => relevantConnections.Any(c => c.uid == s.uid) && !s.established);
-                    var httpAttempts = httpLogs.Count(h => relevantConnections.Any(c => c.uid == h.uid));
+                    var sshAttempts = relevantConnections.Count(c => sshLogs.ContainsKey(c.uid));
+                    var sslAttempts = relevantConnections.Count(c => sslLogs.TryGetValue(c.uid, out var ssl) && !ssl.established);
+                    var httpAttempts = relevantConnections.Count(c => httpLogs.ContainsKey(c.uid));
 
                     if (uniqueDestinations >= config.PasswordSprayingThreshold)
                     {
@@ -106,24 +115,24 @@ namespace FlowBreaker
                             $"HTTP attempts: {httpAttempts}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectSSHBruteForceAsync(
-            Dictionary<string, ConnectionGroup> input, SSHBruteForceConfig config, List<SSHConnection> sshLogs)
+        private static Task<Dictionary<string, ConnectionGroup>> DetectSSHBruteForceAsync(
+            Dictionary<string, ConnectionGroup> input, SSHBruteForceConfig config, Dictionary<string, SSHConnection> sshLogs)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
                     var sshConnections = kvp.Value.connections
                         .Where(c => c.service == "ssh")
                         .ToList();
 
-                    var sshAttempts = sshLogs.Count(s => sshConnections.Any(c => c.uid == s.uid));
+                    var sshAttempts = sshConnections.Count(c => sshLogs.ContainsKey(c.uid));
 
                     if (sshAttempts >= config.MinConnections)
                     {
@@ -133,24 +142,24 @@ namespace FlowBreaker
                                     $"Total SSH connections: {sshConnections.Count}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectSSLBruteForceAsync(
-            Dictionary<string, ConnectionGroup> input, SSLBruteForceConfig config, List<SSLConnection> sslLogs)
+        private static Task<Dictionary<string, ConnectionGroup>> DetectSSLBruteForceAsync(
+            Dictionary<string, ConnectionGroup> input, SSLBruteForceConfig config, Dictionary<string, SSLConnection> sslLogs)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
                     var sslConnections = kvp.Value.connections
                         .Where(c => c.service == "tls")
                         .ToList();
 
-                    var failedSSLHandshakes = sslLogs.Count(s => sslConnections.Any(c => c.uid == s.uid) && !s.established);
+                    var failedSSLHandshakes = sslConnections.Count(c => sslLogs.TryGetValue(c.uid, out var ssl) && !ssl.established);
 
                     if (failedSSLHandshakes >= config.MinConnections)
                     {
@@ -160,24 +169,24 @@ namespace FlowBreaker
                                     $"Total SSL/TLS connections: {sslConnections.Count}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
 
-        private static async Task<Dictionary<string, ConnectionGroup>> DetectHTTPBruteForceAsync(
-            Dictionary<string, ConnectionGroup> input, HTTPBruteForceConfig config, List<HTTPConnection> httpLogs)
+        private static Task<Dictionary<string, ConnectionGroup>> DetectHTTPBruteForceAsync(
+            Dictionary<string, ConnectionGroup> input, HTTPBruteForceConfig config, Dictionary<string, HTTPConnection> httpLogs)
         {
-            return await Task.Run(() =>
+            return Task.Run(() =>
             {
-                var output = new Dictionary<string, ConnectionGroup>();
-                foreach (var kvp in input)
+                var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                Parallel.ForEach(input, kvp =>
                 {
                     var httpConnections = kvp.Value.connections
                         .Where(c => c.service == "http")
                         .ToList();
 
-                    var httpAttempts = httpLogs.Count(h => httpConnections.Any(c => c.uid == h.uid));
+                    var httpAttempts = httpConnections.Count(c => httpLogs.ContainsKey(c.uid));
 
                     if (httpAttempts >= config.MinConnections)
                     {
@@ -187,8 +196,8 @@ namespace FlowBreaker
                                     $"Total HTTP connections: {httpConnections.Count}";
                         output[kvp.Key] = cG;
                     }
-                }
-                return output;
+                });
+                return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
     }
