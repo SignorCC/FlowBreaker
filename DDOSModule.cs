@@ -91,7 +91,7 @@ namespace FlowBreaker
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "UDP Flood";
-                        cG.reason = $"High number of UDP packets: {udpConnections}, DNS queries: {dnsQueries}";
+                        cG.reason = $"High number of UDP connections: {udpConnections}, DNS queries: {dnsQueries}";
                         output[kvp.Key] = cG;
                     }
                 });
