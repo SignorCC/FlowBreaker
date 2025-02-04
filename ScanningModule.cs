@@ -77,7 +77,7 @@ namespace FlowBreaker
                         {
                             var cG = kvp.Value.Copy();
                             cG.classification = "Port Scan";
-                            cG.reason = $"More than {config.Connection_Threshold} (total: {rejected.Count}) bad connections to more than {config.Unique_Port_Threshold} different ports States\n" +
+                            cG.reason = $"More than {config.Connection_Threshold} (total: {rejected.Count}) bad connections to more than {config.Unique_Port_Threshold} different ports\nStates:\n" +
                                         $"S0 (no answer) {s0}\n" +
                                         $"REJ (rejected) {rej}\n" +
                                         $"RSTOS0 (syn followed by reset) {rstos0}\n" +
