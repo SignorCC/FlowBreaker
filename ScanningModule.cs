@@ -64,10 +64,11 @@ namespace FlowBreaker
                 {
                     if (kvp.Value.dest_ports.Count >= config.Unique_Port_Threshold)
                     {
-                        var rejected = kvp.Value.connections.Where(c => c.conn_state == "S0" || c.conn_state == "REJ" || c.conn_state == "RSTOS0").ToList();
+                        var rejected = kvp.Value.connections.Where(c => c.conn_state == "S0" || c.conn_state == "REJ" || c.conn_state == "RSTOS0" || c.conn_state == "RSTRH").ToList();
                         var s0 = rejected.Count(c => c.conn_state == "S0");
                         var rej = rejected.Count(c => c.conn_state == "REJ");
                         var rstos0 = rejected.Count(c => c.conn_state == "RSTOS0");
+                        var rstrh = rejected.Count(c => c.conn_state == "RSTRH");
 
                         var sshAttempts = kvp.Value.connections.Count(c => sshLogs.TryGetValue(c.uid, out var ssh) && ssh.auth_attempts > 0);
                         var sslAttempts = kvp.Value.connections.Count(c => sslLogs.TryGetValue(c.uid, out var ssl) && !ssl.established);
@@ -80,6 +81,7 @@ namespace FlowBreaker
                                         $"S0 (no answer) {s0}\n" +
                                         $"REJ (rejected) {rej}\n" +
                                         $"RSTOS0 (syn followed by reset) {rstos0}\n" +
+                                        $"RSTRH (SYN_ACK followed by RST, SYN wasn't seen) {rstrh}\n" +
                                         $"Failed SSH attempts: {sshAttempts}\n" +
                                         $"Failed SSL attempts: {sslAttempts}";
 

@@ -83,12 +83,23 @@ namespace FlowBreaker
                   .AppendLine($"\tOutgoing Connections: {group.valHighOutConnIP}")
                   .AppendLine($"\tIncoming Connections: {group.valHighInConnIP}");
 
+                // Calculate total Bytes transferred
+                double totalBytes = 0;
+                double ipBytes = 0;
+                foreach (var conn in group.connections)
+                {
+                    totalBytes += conn.orig_bytes + conn.resp_bytes;
+                    ipBytes += conn.orig_ip_bytes + conn.resp_ip_bytes;
+                }
+
                 sb.AppendLine("Average Values:")
                   .AppendLine($"\tConnections per Destination IP: {group.AverageConnectionsPerDestinationIP}")
                   .AppendLine($"\tConnections per Source IP: {group.AverageConnectionsPerSourceIP}")
                   .AppendLine($"\tConnections per Destination Port: {group.AverageConnectionsPerDestinationPort}")
                   .AppendLine($"\tConnections per Source Port: {group.AverageConnectionsPerSourcePort}")
-                  .AppendLine($"\tConnections per Unique IP: {group.AverageConnectionsPerUniqueIP}");
+                  .AppendLine($"\tConnections per Unique IP: {group.AverageConnectionsPerUniqueIP}")
+                  .AppendLine($"\tBytes transferred per Connection: {(float)totalBytes/group.connections.Count}")
+                  .AppendLine($"\tIP Bytes transferred per Connection: {(float)ipBytes/group.connections.Count}");
 
                 sb.AppendLine(new string('-', 80));
 
