@@ -111,7 +111,7 @@ namespace FlowBreaker
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "ICMP Flood";
-                        cG.reason = $"High number of ICMP packets: {kvp.Value.connections.Count}";
+                        cG.reason = $"High number of ICMP connections: {kvp.Value.connections.Count}";
                         output[kvp.Key] = cG;
                     }
                 });
@@ -200,7 +200,7 @@ namespace FlowBreaker
                 var output = new ConcurrentDictionary<string, ConnectionGroup>();
                 Parallel.ForEach(input, kvp =>
                 {
-                    var totalConnections = kvp.Value.connections.Count(c => c.orig_bytes + c.resp_bytes <= config.MaxBytes && c.duration >= config.MinDuration);
+                    var totalConnections = kvp.Value.connections.Count(c => c.orig_ip_bytes + c.resp_ip_bytes <= config.MaxBytes && c.duration >= config.MinDuration);
 
                     if (totalConnections >= config.ConnectionThreshold)
                     {

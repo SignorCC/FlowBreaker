@@ -108,7 +108,7 @@ namespace FlowBreaker
                 {
                     var commonPortConnections = kvp.Value.connections
                         .Where(c => config.Common_Ports.Contains(c.id_resp_p) &&
-                                    (c.orig_bytes + c.resp_bytes) <= config.Max_Bytes_Transferred)
+                                    (c.orig_ip_bytes + c.resp_ip_bytes) <= config.Max_Bytes_Transferred)
                         .ToList();
 
                     var enhancedConnections = commonPortConnections.Select(c => new
@@ -223,7 +223,7 @@ namespace FlowBreaker
                 {
                     var serviceConnections = kvp.Value.connections
                         .Where(c => config.Common_Ports.Contains(c.id_resp_p) &&
-                                    (c.orig_bytes + c.resp_bytes) >= config.Min_Bytes_Transferred)
+                                    (c.orig_ip_bytes + c.resp_ip_bytes) >= config.Min_Bytes_Transferred)
                         .ToList();
 
                     var enhancedConnections = serviceConnections.Select(c => new
