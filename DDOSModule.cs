@@ -64,11 +64,17 @@ namespace FlowBreaker
                     var synConnections = kvp.Value.connections.Count(c => c.history == "S");
                     var failedSSLHandshakes = kvp.Value.connections.Count(c => failedSslHandshakes.Contains(c.uid));
 
+                    // Create new list
+                    var newConnections = kvp.Value.connections.Where(c => c.history == "S").ToList();
+                    newConnections.AddRange(kvp.Value.connections.Where(c => failedSslHandshakes.Contains(c.uid)));
+
                     if (synConnections + failedSSLHandshakes >= config.SYNThreshold)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "SYN Flood";
                         cG.reason = $"High number of SYN packets: {synConnections}, Failed SSL handshakes: {failedSSLHandshakes}";
+
+                        cG.resetConnections(newConnections);
                         output[kvp.Key] = cG;
                     }
                 });
@@ -125,30 +131,67 @@ namespace FlowBreaker
             return Task.Run(() =>
             {
                 var output = new ConcurrentDictionary<string, ConnectionGroup>();
+                
                 Parallel.ForEach(input, kvp =>
                 {
                     string ip = kvp.Key;
+                    
                     if (dnsLogs.TryGetValue(ip, out var dnsResponses) && dnsResponses.Count >= config.DNSThreshold)
                     {
-                        var redundantQueries = dnsResponses
-                            .GroupBy(d => d.query ?? "Unknown")
-                            .Where(g => g.Count() >= config.MaxDomainRepetitions)
-                            .ToDictionary(g => g.Key, g => g.Count());
-
-                        if (redundantQueries.Any())
+                        if(config.MaxDomainRepetitions == 0)
                         {
                             var cG = kvp.Value.Copy();
+
                             cG.classification = "DNS Amplification";
-                            string domains = string.Join("\n", redundantQueries.Select(kvp => $"\t\t{kvp.Key} ({kvp.Value})"));
-                            cG.reason = $"\tTotal DNS requests: {dnsResponses.Count} (Threshold: {config.DNSThreshold})\n\tDomains:\n{domains}";
-                            cG.reason += $"\n\tTotal redundant Queries: {redundantQueries.Values.Sum()} (Threshold: {config.MaxDomainRepetitions})";
+                            cG.reason = $"\tTotal DNS requests: {dnsResponses.Count} (Threshold: {config.DNSThreshold}), MaxDomainRepetitions set to 0";
+
+                            var newConnections = cG.connections.Where(c => dnsResponses.Any(d => d.uid == c.uid)).ToList();
+
+                            if(newConnections.Count >= 1)
+                                cG.resetConnections(newConnections);
+
                             output[ip] = cG;
                         }
+
+                        else
+                        {
+                            Dictionary<string, int> redundantQueries = new Dictionary<string, int>();
+
+                            foreach (var dnsResponse in dnsResponses)
+                            {
+                                if (redundantQueries.ContainsKey(dnsResponse.query))
+                                    redundantQueries[dnsResponse.query]++;
+
+                                else
+                                    redundantQueries[dnsResponse.query] = 1;
+                            }
+
+                            // Search for redundant queries
+                            redundantQueries = redundantQueries.Where(kvp => kvp.Value >= config.MaxDomainRepetitions).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+                            if(redundantQueries.Count >= config.DNSThreshold)
+                            {
+                                var cG = kvp.Value.Copy();
+                                cG.classification = "DNS Amplification";
+                                cG.reason = $"\tTotal repeated DNS Queries: {redundantQueries.Count} (Threshold: {config.DNSThreshold})";
+                                cG.reason += $"\n\tAbove mentionend Queries have been repeated more than > {config.MaxDomainRepetitions} times";
+                                cG.reason += $"\n\tTotal redundant Requests: {redundantQueries.Values.Sum()}";
+
+                                var newConnections = cG.connections.Where(c => dnsResponses.Any(d => d.uid == c.uid)).ToList();
+
+                                if (newConnections.Count >= 1)
+                                    cG.resetConnections(newConnections);
+
+                                output[ip] = cG;
+                            }
+                        }
+                        
                     }
                 });
                 return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
         }
+
 
         private static Task<Dictionary<string, ConnectionGroup>> DetectNTPAmplificationAsync(
             Dictionary<string, ConnectionGroup> input, NTPAmplificationConfig config)
@@ -164,6 +207,8 @@ namespace FlowBreaker
                         var cG = kvp.Value.Copy();
                         cG.classification = "NTP Amplification";
                         cG.reason = $"Potential NTP amplification attack detected. NTP connections: {ntpConnections}";
+
+                        cG.resetConnections(cG.connections.Where(c => c.id_resp_p == 123).ToList());
                         output[kvp.Key] = cG;
                     }
                 });
@@ -185,6 +230,8 @@ namespace FlowBreaker
                         var cG = kvp.Value.Copy();
                         cG.classification = "SSDP Amplification";
                         cG.reason = $"Potential SSDP amplification attack detected. SSDP connections: {ssdpConnections}";
+
+                        cG.resetConnections(cG.connections.Where(c => c.id_resp_p == 1900).ToList());
                         output[kvp.Key] = cG;
                     }
                 });
@@ -200,13 +247,15 @@ namespace FlowBreaker
                 var output = new ConcurrentDictionary<string, ConnectionGroup>();
                 Parallel.ForEach(input, kvp =>
                 {
-                    var totalConnections = kvp.Value.connections.Count(c => c.orig_ip_bytes + c.resp_ip_bytes <= config.MaxBytes && c.duration >= config.MinDuration);
+                    var totalConnections = kvp.Value.connections.Where(c => c.orig_ip_bytes + c.resp_ip_bytes <= config.MaxBytes && c.duration >= config.MinDuration).ToList();
 
-                    if (totalConnections >= config.ConnectionThreshold)
+                    if (totalConnections.Count >= config.ConnectionThreshold)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "Connection Exhaustion";
                         cG.reason = $"High number of connections with small data (<={config.MaxBytes}) but long duration >= {config.MinDuration}: Total: {totalConnections}";
+
+                        cG.resetConnections(totalConnections);
                         output[kvp.Key] = cG;
                     }
                 });
@@ -222,18 +271,20 @@ namespace FlowBreaker
                 var output = new ConcurrentDictionary<string, ConnectionGroup>();
                 Parallel.ForEach(input, kvp =>
                 {
-                    var halfOpenConnections = kvp.Value.connections.Count(c => c.conn_state == "S1" || (c.conn_state == "SF" && c.duration >= config.MinDuration));
-                    var suspiciousHTTPConnections = kvp.Value.connections.Count(c =>
+                    var halfOpenConnections = kvp.Value.connections.Where(c => c.conn_state == "S1" || (c.conn_state == "SF" && c.duration >= config.MinDuration)).ToList();
+                    var suspiciousHTTPConnections = kvp.Value.connections.Where(c =>
                         httpLogs.TryGetValue(c.uid, out var httpConn) &&
                         (httpConn.method == "GET" || httpConn.method == "POST") &&
-                        httpConn.request_body_len == 0);
-
-                    if (halfOpenConnections + suspiciousHTTPConnections >= config.HalfOpenThreshold)
+                        httpConn.request_body_len == 0).ToList();
+                                        
+                    if (halfOpenConnections.Count + suspiciousHTTPConnections.Count >= config.HalfOpenThreshold)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "Slowloris Attack";
-                        cG.reason = $"High number of half-open connections: {halfOpenConnections}, " +
-                                    $"Suspicious HTTP connections: {suspiciousHTTPConnections}";
+                        cG.reason = $"High number of half-open connections: {halfOpenConnections.Count}, " +
+                                    $"Suspicious HTTP connections: {suspiciousHTTPConnections.Count}";
+
+                        cG.resetConnections(halfOpenConnections.Concat(suspiciousHTTPConnections).ToList());
                         output[kvp.Key] = cG;
                     }
                 });

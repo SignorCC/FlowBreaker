@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
+using System.Reflection.Emit;
 
 namespace FlowBreaker
 {
@@ -82,9 +83,10 @@ namespace FlowBreaker
                                         $"REJ (rejected) {rej}\n" +
                                         $"RSTOS0 (syn followed by reset) {rstos0}\n" +
                                         $"RSTRH (SYN_ACK followed by RST, SYN wasn't seen) {rstrh}\n" +
-                                        $"Failed SSH attempts: {sshAttempts}\n" +
-                                        $"Failed SSL attempts: {sslAttempts}";
+                                        $"(additional info) Failed SSH attempts: {sshAttempts}\n" +
+                                        $"(additional info) Failed SSL attempts: {sslAttempts}";
 
+                            cG.resetConnections(rejected);
                             output[kvp.Key] = cG;
                         }
                     }
@@ -134,6 +136,7 @@ namespace FlowBreaker
                                     $"Ports: {string.Join(", ", portCounts.Select(pc => $"{pc.Port} ({pc.Count} conns)"))}\n" +
                                     $"Includes {enhancedConnections.Count(c => c.SSHInfo != null)} SSH and {enhancedConnections.Count(c => c.SSLInfo != null)} SSL connections";
 
+                        cG.resetConnections(commonPortConnections);
                         output[kvp.Key] = cG;
                     }
                 });
@@ -200,8 +203,9 @@ namespace FlowBreaker
                         cG.classification = "Protocol-Specific Scan";
                         cG.reason = $"Multiple protocol-specific connection attempts:\n" +
                                     $"\tSYN-only connections: {synScans}\n" +
-                                    $"\tFailed SSL handshakes: {sslHandshakes}";
+                                    $"(additional info) \tFailed SSL handshakes: {sslHandshakes}";
 
+                        cG.resetConnections(kvp.Value.connections.Where(c => c.history == "S").ToList());
                         output[kvp.Key] = cG;
                     }
                 });
@@ -248,6 +252,7 @@ namespace FlowBreaker
                                     $"Ports: {string.Join(", ", portCounts.Select(pc => $"{pc.Port} ({pc.Count} conns)"))}\n" +
                                     $"Includes {enhancedConnections.Count(c => c.HTTPInfo != null)} HTTP connections";
 
+                        cG.resetConnections(serviceConnections);
                         output[kvp.Key] = cG;
                     }
                 });

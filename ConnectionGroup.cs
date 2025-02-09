@@ -165,6 +165,20 @@ namespace FlowBreaker
             
         }
 
+        public void resetConnections(List<Connection> newConnections)
+        {
+            // Clear existing data
+            connections.Clear();
+            src_ips.Clear();
+            src_ports.Clear();
+            dest_ips.Clear();
+            dest_ports.Clear();
+            services.Clear();
+
+            // Use the existing setConnections method to populate with new data
+            setConnections(newConnections);
+        }
+
         public override string ToString()
         {
             return $"ConnectionGroup: {src_ips}:{src_ports} -> {dest_ips}:{dest_ports} {proto} {service} {connections.Count} connections";
