@@ -85,7 +85,7 @@ namespace FlowBreaker
                                         $"RSTRH (SYN_ACK followed by RST, SYN wasn't seen) {rstrh}\n" +
                                         $"(additional info) Failed SSH attempts: {sshAttempts}\n" +
                                         $"(additional info) Failed SSL attempts: {sslAttempts}";
-
+                            
                             cG.resetConnections(rejected);
                             output[kvp.Key] = cG;
                         }
@@ -137,6 +137,7 @@ namespace FlowBreaker
                                     $"Includes {enhancedConnections.Count(c => c.SSHInfo != null)} SSH and {enhancedConnections.Count(c => c.SSLInfo != null)} SSL connections";
 
                         cG.resetConnections(commonPortConnections);
+
                         output[kvp.Key] = cG;
                     }
                 });
@@ -205,7 +206,9 @@ namespace FlowBreaker
                                     $"\tSYN-only connections: {synScans}\n" +
                                     $"(additional info) \tFailed SSL handshakes: {sslHandshakes}";
 
+
                         cG.resetConnections(kvp.Value.connections.Where(c => c.history == "S").ToList());
+
                         output[kvp.Key] = cG;
                     }
                 });

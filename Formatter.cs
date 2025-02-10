@@ -30,6 +30,7 @@ namespace FlowBreaker
 
                 sb.AppendLine("Connection Summary:");
 
+
                 if (!(group.dest_ips.First().Key == ip && group.dest_ips.Count == 1))
                 {
                     isSourceIP = true;
@@ -97,9 +98,15 @@ namespace FlowBreaker
                   .AppendLine($"\tConnections per Source IP: {group.AverageConnectionsPerSourceIP}")
                   .AppendLine($"\tConnections per Destination Port: {group.AverageConnectionsPerDestinationPort}")
                   .AppendLine($"\tConnections per Source Port: {group.AverageConnectionsPerSourcePort}")
-                  .AppendLine($"\tConnections per Unique IP: {group.AverageConnectionsPerUniqueIP}")
-                  .AppendLine($"\tBytes transferred per Connection: {(float)totalBytes/group.connections.Count}")
-                  .AppendLine($"\tIP Bytes transferred per Connection: {(float)ipBytes/group.connections.Count}");
+                  .AppendLine($"\tConnections per Unique IP: {group.AverageConnectionsPerUniqueIP}");
+
+                if (group.connections.Count != 0)
+                {
+                    sb.AppendLine($"\tBytes transferred per Connection: {(float)totalBytes / group.connections.Count}")
+                     .AppendLine($"\tIP Bytes transferred per Connection: {(float)ipBytes / group.connections.Count}")
+                     .AppendLine($"\tBytes transferred per Connection: {(float)totalBytes / group.connections.Count}")
+                     .AppendLine($"\tIP Bytes transferred per Connection: {(float)ipBytes / group.connections.Count}");
+                }
 
                 sb.AppendLine(new string('-', 80));
 

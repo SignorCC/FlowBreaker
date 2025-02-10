@@ -167,6 +167,13 @@ namespace FlowBreaker
 
         public void resetConnections(List<Connection> newConnections)
         {
+            
+            if (newConnections.Count == 0)
+            {
+                this.classification = "RESET-INVALID";
+                return;
+            }
+
             // Clear existing data
             connections.Clear();
             src_ips.Clear();

@@ -253,7 +253,7 @@ namespace FlowBreaker
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "Connection Exhaustion";
-                        cG.reason = $"High number of connections with small data (<={config.MaxBytes}) but long duration >= {config.MinDuration}: Total: {totalConnections}";
+                        cG.reason = $"High number of connections with small data (<={config.MaxBytes}) but long duration >= {config.MinDuration}: Total: {totalConnections.Count}";
 
                         cG.resetConnections(totalConnections);
                         output[kvp.Key] = cG;
