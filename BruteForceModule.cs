@@ -34,7 +34,7 @@ namespace FlowBreaker
                 DetectPasswordSprayingAsync(tcpSource, passwordSprayingConfig, sshLogDict, sslLogDict, httpLogDict),
                 DetectSSHBruteForceAsync(tcpSource, sshBruteForceConfig, sshLogDict),
                 DetectSSLBruteForceAsync(tcpSource, sslBruteForceConfig, sslLogDict),
-                DetectHTTPBruteForceAsync(tcpSource, httpBruteForceConfig, httpLogDict)
+                DetectHTTPBruteForceAsync(tcpSource, httpBruteForceConfig, httpLogs)
             };
 
             await Task.WhenAll(tasks);
@@ -62,6 +62,7 @@ namespace FlowBreaker
                         .Select(port => new
                         {
                             Port = port,
+                            Connections = kvp.Value.connections.Where(c => c.id_resp_p == port).ToList(),
                             Count = kvp.Value.connections.Count(c => c.id_resp_p == port),
                             SSHAttempts = kvp.Value.connections.Count(c => c.id_resp_p == port && sshLogs.ContainsKey(c.uid)),
                             SSLAttempts = kvp.Value.connections.Count(c => c.id_resp_p == port && sslLogs.TryGetValue(c.uid, out var ssl) && !ssl.established)
@@ -76,6 +77,12 @@ namespace FlowBreaker
                         cG.reason = $"High number of connection attempts: " +
                             string.Join(", ", suspiciousConnections.Select(x =>
                                 $"Port {x.Port}: {x.Count} (SSH: {x.SSHAttempts}, SSL: {x.SSLAttempts})"));
+
+                        // Create a new list of connections that are in suspiciousConnections
+                        cG.resetConnections(suspiciousConnections
+                            .SelectMany(x => x.Connections)
+                            .ToList());
+
                         output[kvp.Key] = cG;
                     }
                 });
@@ -113,6 +120,8 @@ namespace FlowBreaker
                             $"SSH attempts: {sshAttempts}\n" +
                             $"SSL attempts: {sslAttempts}\n" +
                             $"HTTP attempts: {httpAttempts}";
+
+                        cG.resetConnections(relevantConnections);
                         output[kvp.Key] = cG;
                     }
                 });
@@ -132,14 +141,16 @@ namespace FlowBreaker
                         .Where(c => c.service == "ssh")
                         .ToList();
 
-                    var sshAttempts = sshConnections.Count(c => sshLogs.ContainsKey(c.uid));
+                    var sshAttempts = sshConnections.Where(c => sshLogs.ContainsKey(c.uid)).ToList();
 
-                    if (sshAttempts >= config.MinConnections)
+                    if (sshAttempts.Count >= config.MinConnections)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "SSH Brute Force Attack";
                         cG.reason = $"High number of SSH connection attempts: {sshAttempts}\n" +
                                     $"Total SSH connections: {sshConnections.Count}";
+
+                        cG.resetConnections(sshConnections);
                         output[kvp.Key] = cG;
                     }
                 });
@@ -159,14 +170,16 @@ namespace FlowBreaker
                         .Where(c => c.service == "tls")
                         .ToList();
 
-                    var failedSSLHandshakes = sslConnections.Count(c => sslLogs.TryGetValue(c.uid, out var ssl) && !ssl.established);
+                    var failedSSLHandshakes = sslConnections.Where(c => sslLogs.TryGetValue(c.uid, out var ssl) && !ssl.established).ToList();
 
-                    if (failedSSLHandshakes >= config.MinConnections)
+                    if (failedSSLHandshakes.Count >= config.MinConnections)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "SSL/TLS Brute Force Attack";
                         cG.reason = $"High number of failed SSL/TLS handshakes: {failedSSLHandshakes}\n" +
                                     $"Total SSL/TLS connections: {sslConnections.Count}";
+
+                        cG.resetConnections(failedSSLHandshakes);
                         output[kvp.Key] = cG;
                     }
                 });
@@ -175,7 +188,7 @@ namespace FlowBreaker
         }
 
         private static Task<Dictionary<string, ConnectionGroup>> DetectHTTPBruteForceAsync(
-            Dictionary<string, ConnectionGroup> input, HTTPBruteForceConfig config, Dictionary<string, HTTPConnection> httpLogs)
+            Dictionary<string, ConnectionGroup> input, HTTPBruteForceConfig config, List<HTTPConnection> httpLogs)
         {
             return Task.Run(() =>
             {
@@ -186,16 +199,21 @@ namespace FlowBreaker
                         .Where(c => c.service == "http")
                         .ToList();
 
-                    var httpAttempts = httpConnections.Count(c => httpLogs.ContainsKey(c.uid));
+                    var logs = httpLogs.Where(c => c.id_orig_h == kvp.Key).ToList();
 
-                    if (httpAttempts >= config.MinConnections)
-                    {
-                        var cG = kvp.Value.Copy();
-                        cG.classification = "HTTP Brute Force Attack";
-                        cG.reason = $"High number of HTTP requests: {httpAttempts}\n" +
-                                    $"Total HTTP connections: {httpConnections.Count}";
-                        //output[kvp.Key] = cG;
-                    }
+                    var httpAttempts = logs.Where(c => c.uri != null && c.uri.Contains("password="));
+
+                    if (httpAttempts != null)
+                        if (httpAttempts.Count() >= config.MinConnections)
+                        {
+                            var cG = kvp.Value.Copy();
+                            cG.classification = "HTTP Brute Force Attack";
+                            cG.reason = $"High number of HTTP auth attempts: {httpAttempts.Count()}\n" +
+                                        $"Total HTTP connections: {httpConnections.Count}";
+
+                            cG.resetConnections(httpConnections);
+                            output[kvp.Key] = cG;
+                        }
                 });
                 return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             });
