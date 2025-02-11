@@ -71,20 +71,16 @@ namespace FlowBreaker
                 var output = new ConcurrentDictionary<string, ConnectionGroup>();
                 Parallel.ForEach(input, kvp =>
                 {
-                    var synConnections = kvp.Value.connections.Count(c => c.history == "S");
-                    var failedSSLHandshakes = kvp.Value.connections.Count(c => failedSslHandshakes.Contains(c.uid));
+                    var synConnections = kvp.Value.connections.Where(c => c.conn_state == "S0" || c.conn_state == "REJ").ToList();
 
-                    // Create new list
-                    var newConnections = kvp.Value.connections.Where(c => c.history == "S").ToList();
-                    newConnections.AddRange(kvp.Value.connections.Where(c => failedSslHandshakes.Contains(c.uid)));
 
-                    if (synConnections + failedSSLHandshakes >= config.SYNThreshold)
+                    if (synConnections.Count() >= config.SYNThreshold)
                     {
                         var cG = kvp.Value.Copy();
                         cG.classification = "SYN Flood";
-                        cG.reason = $"High number of SYN packets: {synConnections}, Failed SSL handshakes: {failedSSLHandshakes}";
+                        cG.reason = $"High number of connections in S0 or REJ state: {synConnections.Count} (threshold: {config.SYNThreshold})";
 
-                        cG.resetConnections(newConnections);
+                        cG.resetConnections(synConnections);
                         output[kvp.Key] = cG;
                     }
                 });
