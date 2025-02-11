@@ -85,8 +85,8 @@ namespace FlowBreaker
                   .AppendLine($"\tIncoming Connections: {group.valHighInConnIP}");
 
                 // Calculate total Bytes transferred
-                double totalBytes = 0;
-                double ipBytes = 0;
+                long totalBytes = 0;
+                long ipBytes = 0;
                 foreach (var conn in group.connections)
                 {
                     totalBytes += conn.orig_bytes + conn.resp_bytes;

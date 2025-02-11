@@ -22,9 +22,19 @@ namespace FlowBreaker
             List<HTTPConnection> httpLogs)
         {
             // Pre-process logs for faster lookups
-            var sslLogSet = new HashSet<string>(sslLogs.Where(s => !s.established).Select(s => s.uid));
-            var dnsLogDict = dnsLogs.GroupBy(d => d.id_resp_h).ToDictionary(g => g.Key, g => g.ToList());
-            var httpLogDict = httpLogs.GroupBy(h => h.uid).ToDictionary(g => g.Key, g => g.First());
+            var sslLogSet = new HashSet<string>(sslLogs?.Where(s => !s.established).Select(s => s.uid ?? string.Empty) ?? Enumerable.Empty<string>());
+
+            var dnsLogDict = dnsLogs?
+                .Where(d => d.id_resp_h != null)
+                .GroupBy(d => d.id_resp_h)
+                .ToDictionary(g => g.Key, g => g.ToList())
+                ?? new Dictionary<string, List<DNSConnection>>();
+
+            var httpLogDict = httpLogs?
+                .Where(h => h.uid != null)
+                .GroupBy(h => h.uid)
+                .ToDictionary(g => g.Key, g => g.FirstOrDefault())
+                ?? new Dictionary<string, HTTPConnection>();
 
             var tasks = new[]
             {
@@ -131,37 +141,35 @@ namespace FlowBreaker
             return Task.Run(() =>
             {
                 var output = new ConcurrentDictionary<string, ConnectionGroup>();
-                
+
                 Parallel.ForEach(input, kvp =>
                 {
                     string ip = kvp.Key;
-                    
-                    if (dnsLogs.TryGetValue(ip, out var dnsResponses) && dnsResponses.Count >= config.DNSThreshold)
+
+                    if (ip != null && dnsLogs != null && dnsLogs.TryGetValue(ip, out var dnsResponses) && dnsResponses != null && dnsResponses.Count >= config.DNSThreshold)
                     {
-                        if(config.MaxDomainRepetitions == 0)
+                        if (config.MaxDomainRepetitions == 0)
                         {
                             var cG = kvp.Value.Copy();
 
                             cG.classification = "DNS Amplification";
                             cG.reason = $"\tTotal DNS requests: {dnsResponses.Count} (Threshold: {config.DNSThreshold}), MaxDomainRepetitions set to 0";
 
-                            var newConnections = cG.connections.Where(c => dnsResponses.Any(d => d.uid == c.uid)).ToList();
+                            var newConnections = cG.connections.Where(c => c != null && dnsResponses.Any(d => d != null && d.uid == c.uid)).ToList();
 
-                            if(newConnections.Count >= 1)
+                            if (newConnections.Count >= 1)
                                 cG.resetConnections(newConnections);
 
                             output[ip] = cG;
                         }
-
                         else
                         {
                             Dictionary<string, int> redundantQueries = new Dictionary<string, int>();
 
-                            foreach (var dnsResponse in dnsResponses)
+                            foreach (var dnsResponse in dnsResponses.Where(d => d != null && d.query != null))
                             {
                                 if (redundantQueries.ContainsKey(dnsResponse.query))
                                     redundantQueries[dnsResponse.query]++;
-
                                 else
                                     redundantQueries[dnsResponse.query] = 1;
                             }
@@ -169,15 +177,15 @@ namespace FlowBreaker
                             // Search for redundant queries
                             redundantQueries = redundantQueries.Where(kvp => kvp.Value >= config.MaxDomainRepetitions).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
-                            if(redundantQueries.Count >= config.DNSThreshold)
+                            if (redundantQueries.Count >= config.DNSThreshold)
                             {
                                 var cG = kvp.Value.Copy();
                                 cG.classification = "DNS Amplification";
                                 cG.reason = $"\tTotal repeated DNS Queries: {redundantQueries.Count} (Threshold: {config.DNSThreshold})";
-                                cG.reason += $"\n\tAbove mentionend Queries have been repeated more than > {config.MaxDomainRepetitions} times";
+                                cG.reason += $"\n\tAbove mentioned Queries have been repeated more than > {config.MaxDomainRepetitions} times";
                                 cG.reason += $"\n\tTotal redundant Requests: {redundantQueries.Values.Sum()}";
 
-                                var newConnections = cG.connections.Where(c => dnsResponses.Any(d => d.uid == c.uid)).ToList();
+                                var newConnections = cG.connections.Where(c => c != null && dnsResponses.Any(d => d != null && d.uid == c.uid)).ToList();
 
                                 if (newConnections.Count >= 1)
                                     cG.resetConnections(newConnections);
@@ -185,7 +193,6 @@ namespace FlowBreaker
                                 output[ip] = cG;
                             }
                         }
-                        
                     }
                 });
                 return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);

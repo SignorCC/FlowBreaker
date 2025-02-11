@@ -194,7 +194,7 @@ namespace FlowBreaker
                         cG.classification = "HTTP Brute Force Attack";
                         cG.reason = $"High number of HTTP requests: {httpAttempts}\n" +
                                     $"Total HTTP connections: {httpConnections.Count}";
-                        output[kvp.Key] = cG;
+                        //output[kvp.Key] = cG;
                     }
                 });
                 return output.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);

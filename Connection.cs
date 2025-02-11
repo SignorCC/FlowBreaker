@@ -33,17 +33,17 @@ namespace FlowBreaker
 
         // Less important fields
         public double duration { get; set; }
-        public int orig_bytes { get; set; }
-        public int resp_bytes { get; set; }
+        public long orig_bytes { get; set; }
+        public long resp_bytes { get; set; }
         public string conn_state { get; set; }
         public bool local_orig { get; set; }
         public bool local_resp { get; set; }
-        public int missed_bytes { get; set; }
+        public long missed_bytes { get; set; }
         public string history { get; set; }
-        public int orig_pkts { get; set; }
-        public int orig_ip_bytes { get; set; }
-        public int resp_pkts { get; set; }
-        public int resp_ip_bytes { get; set; }
+        public long orig_pkts { get; set; }
+        public long orig_ip_bytes { get; set; }
+        public long resp_pkts { get; set; }
+        public long resp_ip_bytes { get; set; }
 
         // Custom fields
         public Classification classification { get; set; }
