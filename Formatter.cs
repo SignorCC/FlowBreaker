@@ -101,12 +101,9 @@ namespace FlowBreaker
                   .AppendLine($"\tConnections per Unique IP: {group.AverageConnectionsPerUniqueIP}");
 
                 if (group.connections.Count != 0)
-                {
                     sb.AppendLine($"\tBytes transferred per Connection: {(float)totalBytes / group.connections.Count}")
-                     .AppendLine($"\tIP Bytes transferred per Connection: {(float)ipBytes / group.connections.Count}")
-                     .AppendLine($"\tBytes transferred per Connection: {(float)totalBytes / group.connections.Count}")
-                     .AppendLine($"\tIP Bytes transferred per Connection: {(float)ipBytes / group.connections.Count}");
-                }
+                        .AppendLine($"\tIP Bytes transferred per Connection: {(float)ipBytes / group.connections.Count}");
+                
 
                 sb.AppendLine(new string('-', 80));
 
